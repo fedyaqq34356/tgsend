@@ -1,8 +1,7 @@
-# handlers/drafts.py
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
-from states.states import CreateDraft, ConfigureDraft, SendDraft
+from states.states import CreateDraft, ConfigureDraft, SendDraft, DeleteDraft
 from keyboards.main_kb import cancel_kb, drafts_menu, main_menu
 from database.storage import storage
 from utils.telethon_auth import send_telegram_message
@@ -197,9 +196,9 @@ async def process_draft_send(message: Message, state: FSMContext):
     except:
         await message.answer("❌ Ошибка отправки!")
 
-# === Удалить черновик (без состояния) ===
+# === Удалить черновик (С ОТДЕЛЬНЫМ СОСТОЯНИЕМ!) ===
 @router.message(F.text == "🗑 Удалить черновик")
-async def delete_draft_start(message: Message):
+async def delete_draft_start(message: Message, state: FSMContext):
     if not storage.drafts:
         await message.answer("❌ Нет черновиков")
         return
@@ -208,18 +207,20 @@ async def delete_draft_start(message: Message):
     for draft in storage.drafts:
         text += f"{draft['id']}. {draft['text'][:40]}...\n"
     
-    await message.answer(text + "\nОтправьте номер черновика:")
+    await state.set_state(DeleteDraft.choosing_draft)
+    await message.answer(text + "\nОтправьте номер черновика:", reply_markup=cancel_kb())
 
-@router.message(F.text.regexp(r'^\d+$'))
-async def process_delete_draft(message: Message):
+@router.message(DeleteDraft.choosing_draft, F.text.regexp(r'^\d+$'))
+async def process_delete_draft(message: Message, state: FSMContext):
     try:
         draft_id = int(message.text)
         draft = next((d for d in storage.drafts if d["id"] == draft_id), None)
         if draft:
             storage.drafts.remove(draft)
             storage.save_drafts()
+            await state.clear()
             await message.answer(f"✅ Черновик #{draft_id} удалён!", reply_markup=drafts_menu())
         else:
             await message.answer("❌ Черновик не найден")
-    except ValueError:
-        pass  # Игнорируем нечисловые сообщения
+    except:
+        await message.answer("❌ Ошибка ввода!")
