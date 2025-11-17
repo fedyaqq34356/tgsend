@@ -2,17 +2,18 @@
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
-from states.states import ScheduleMessage, DeleteScheduled
+from states.states import ScheduleMessage
 from keyboards.main_kb import cancel_kb, scheduler_menu
 from database.storage import storage
 from datetime import datetime
 
 router = Router()
 
+# === Запланировать сообщение ===
 @router.message(F.text == "➕ Запланировать")
 async def schedule_start(message: Message, state: FSMContext):
     if not storage.targets:
-        await message.answer("❌ Сначала добавьте получателей!")
+        await message.answer("❌ Сначала добавьте получателей!", reply_markup=main_kb())
         return
     
     text = "Выберите получателя:\n\n"
@@ -31,14 +32,15 @@ async def process_schedule_target(message: Message, state: FSMContext):
     try:
         idx = int(message.text) - 1
         target_list = list(storage.targets.keys())
-        
         if 0 <= idx < len(target_list):
             target_id = target_list[idx]
             await state.update_data(target_id=target_id)
             await state.set_state(ScheduleMessage.waiting_text)
             await message.answer("Введите текст сообщения:")
+        else:
+            await message.answer("❌ Неверный номер!")
     except:
-        await message.answer("❌ Ошибка!")
+        await message.answer("❌ Введите номер!")
 
 @router.message(ScheduleMessage.waiting_text)
 async def process_schedule_text(message: Message, state: FSMContext):
@@ -47,7 +49,7 @@ async def process_schedule_text(message: Message, state: FSMContext):
     await message.answer(
         "Когда отправить?\n\n"
         "Формат: ДД.ММ.ГГГГ ЧЧ:ММ\n"
-        "Например: 20.12.2025 15:30"
+        "Пример: 20.12.2025 15:30"
     )
 
 @router.message(ScheduleMessage.waiting_time)
@@ -82,30 +84,29 @@ async def process_schedule_time(message: Message, state: FSMContext):
             reply_markup=scheduler_menu()
         )
     except Exception as e:
-        await message.answer(f"❌ Ошибка формата! Попробуйте снова:\n{e}")
+        await message.answer(f"❌ Ошибка формата времени!\n{e}")
 
+# === Показать запланированные ===
 @router.message(F.text == "📋 Показать запланированные")
 async def show_scheduled(message: Message):
     if not storage.scheduled_messages:
         await message.answer("❌ Нет запланированных сообщений")
         return
     
-    text = "⏰ <b>Запланированные:</b>\n\n"
+    text = "⏰ <b>Запланированные сообщения:</b>\n\n"
     for i, msg in enumerate(storage.scheduled_messages, 1):
         target_data = storage.targets.get(msg["target_id"], {})
+        name = target_data.get('username', target_data.get('chat_id', 'неизвестно'))
         if target_data.get("type") == "user":
-            name = f"@{target_data.get('username', '?')}"
-        else:
-            name = f"Группа {target_data.get('chat_id', '?')}"
-        
-        text += f"{i}. {msg['time']}\n"
-        text += f"   → {name}\n"
+            name = f"@{name}"
+        text += f"{i}. {msg['time'][:16]} → {name}\n"
         text += f"   {msg['text'][:40]}...\n\n"
     
     await message.answer(text, parse_mode="HTML")
 
+# === Удалить запланированное (без состояния) ===
 @router.message(F.text == "🗑 Удалить запланированное")
-async def delete_scheduled_start(message: Message, state: FSMContext):
+async def delete_scheduled_start(message: Message):
     if not storage.scheduled_messages:
         await message.answer("❌ Нет запланированных сообщений")
         return
@@ -114,19 +115,17 @@ async def delete_scheduled_start(message: Message, state: FSMContext):
     for i, msg in enumerate(storage.scheduled_messages, 1):
         text += f"{i}. {msg['time'][:16]}\n"
     
-    await state.set_state(DeleteScheduled.choosing_message)
-    await message.answer(text, reply_markup=cancel_kb())
+    await message.answer(text + "\nОтправьте номер:")
 
-@router.message(DeleteScheduled.choosing_message, F.text.regexp(r'^\d+$'))
-async def process_scheduled_deletion(message: Message, state: FSMContext):
+@router.message(F.text.regexp(r'^\d+$'))
+async def process_scheduled_deletion(message: Message):
     try:
         idx = int(message.text) - 1
         if 0 <= idx < len(storage.scheduled_messages):
             removed = storage.scheduled_messages.pop(idx)
             storage.save_scheduled()
-            await state.clear()
             await message.answer("✅ Запланированное сообщение удалено!", reply_markup=scheduler_menu())
         else:
-            await message.answer("❌ Неверный номер! Попробуйте снова:")
-    except:
-        await message.answer("❌ Ошибка! Введите правильный номер:")
+            await message.answer("❌ Неверный номер!")
+    except ValueError:
+        pass  # Игнорируем нечисловой ввод
