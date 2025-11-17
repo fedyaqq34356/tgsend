@@ -7,7 +7,7 @@ class AddAccount(StatesGroup):
     waiting_phone = State()
     waiting_code = State()
     waiting_password = State()
-    deleting_account = State()  # <-- Новое состояние для безопасного удаления
+    deleting_account = State()
 
 class AddTarget(StatesGroup):
     choosing_type = State()
@@ -30,10 +30,16 @@ class ConfigureDraft(StatesGroup):
 class SendDraft(StatesGroup):
     choosing_draft = State()
 
+class DeleteDraft(StatesGroup):  # НОВОЕ!
+    choosing_draft = State()
+
 class ScheduleMessage(StatesGroup):
     choosing_target = State()
     waiting_text = State()
     waiting_time = State()
+
+class DeleteScheduled(StatesGroup):  # НОВОЕ!
+    choosing_message = State()
 
 class AssignAccount(StatesGroup):
     choosing_target = State()
