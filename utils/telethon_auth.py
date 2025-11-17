@@ -1,6 +1,5 @@
-# utils/telethon_auth.py
 from telethon import TelegramClient
-from telethon.errors import SessionPasswordNeededError
+from telethon.errors import SessionPasswordNeededError, PhoneCodeExpiredError, PhoneCodeInvalidError
 from database.storage import storage
 from datetime import datetime
 
@@ -25,12 +24,12 @@ async def start_auth(user_id, session_name, api_id, api_hash, phone):
             "waiting_for": "code"
         }
         
-        return True, "Код отправлен на ваш Telegram. Введите его:"
+        return True, "Код отправлен на ваш Telegram."
     except Exception as e:
         return False, f"Ошибка: {e}"
 
 async def submit_code(user_id, code):
-    """Отправляет код подтверждения"""
+    """Отправляет код подтверждения (code — строка из цифр)"""
     if user_id not in auth_processes:
         return False, "Процесс авторизации не найден"
     
@@ -38,8 +37,12 @@ async def submit_code(user_id, code):
     client = auth["client"]
     phone = auth["phone"]
     
+    # Валидация: код должен быть строкой из 5 цифр
+    if len(code) != 5 or not code.isdigit():
+        return False, "Код должен быть 5 цифрами (без пробелов после ввода)."
+    
     try:
-        await client.sign_in(phone, code.strip())
+        await client.sign_in(phone, code=code)
         
         # Успешная авторизация
         storage.accounts[auth["session_name"]] = {
@@ -54,11 +57,16 @@ async def submit_code(user_id, code):
         
         return True, f"✅ Аккаунт '{auth['session_name']}' успешно добавлен!"
         
+    except PhoneCodeExpiredError:
+        # Автоматический запрос нового кода
+        await client.send_code_request(phone)
+        return "retry", "Код истёк. Новый код отправлен."
+    except PhoneCodeInvalidError:
+        return False, "Неверный код. Введите заново по цифрам через пробел."
     except SessionPasswordNeededError:
         # Нужен 2FA пароль
         auth["waiting_for"] = "password"
         return "2fa", "Требуется пароль двухфакторной аутентификации:"
-        
     except Exception as e:
         return False, f"Ошибка: {e}"
 
