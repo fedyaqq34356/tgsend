@@ -1,4 +1,3 @@
-# states/states.py
 from aiogram.fsm.state import State, StatesGroup
 
 class AddAccount(StatesGroup):
@@ -8,9 +7,7 @@ class AddAccount(StatesGroup):
     waiting_phone = State()
     waiting_code = State()
     waiting_password = State()
-
-class DeleteAccount(StatesGroup):
-    choosing_account = State()
+    deleting_account = State()  # <-- Новое состояние для безопасного удаления
 
 class AddTarget(StatesGroup):
     choosing_type = State()
@@ -33,16 +30,10 @@ class ConfigureDraft(StatesGroup):
 class SendDraft(StatesGroup):
     choosing_draft = State()
 
-class DeleteDraft(StatesGroup):
-    choosing_draft = State()
-
 class ScheduleMessage(StatesGroup):
     choosing_target = State()
     waiting_text = State()
     waiting_time = State()
-
-class DeleteScheduled(StatesGroup):
-    choosing_message = State()
 
 class AssignAccount(StatesGroup):
     choosing_target = State()
