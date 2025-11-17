@@ -1,9 +1,7 @@
-# handlers/accounts.py
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
-from aiogram.filters import StateFilter
-from states.states import AddAccount, DeleteAccount
+from states.states import AddAccount
 from keyboards.main_kb import cancel_kb, accounts_menu
 from utils.telethon_auth import start_auth, submit_code, submit_password, cancel_auth
 from database.storage import storage
@@ -64,14 +62,25 @@ async def process_phone(message: Message, state: FSMContext):
     
     if success:
         await state.set_state(AddAccount.waiting_code)
-        await message.answer(result)
+        await message.answer(f"{result}\n\n💡 <b>Для безопасности введите код по одной цифре через пробел</b>\n(Пример: 6 2 3 7 8)", parse_mode="HTML")
     else:
         await state.clear()
         await message.answer(f"❌ {result}", reply_markup=accounts_menu())
 
 @router.message(AddAccount.waiting_code)
 async def process_code(message: Message, state: FSMContext):
-    code = message.text.strip()
+    # Парсим ввод: цифры через пробел
+    digits = [d.strip() for d in message.text.split() if d.strip().isdigit()]
+    
+    if len(digits) != 5:
+        await message.answer(
+            "❌ Код должен состоять из 5 цифр, введённых через пробел!\n"
+            "Пример: 6 2 3 7 8\n\nПопробуйте снова:"
+        )
+        return  # Остаёмся в состоянии waiting_code
+    
+    # Собираем код в строку
+    code = ''.join(digits)
     
     result_type, result_msg = await submit_code(message.from_user.id, code)
     
@@ -83,6 +92,9 @@ async def process_code(message: Message, state: FSMContext):
         # Нужен 2FA
         await state.set_state(AddAccount.waiting_password)
         await message.answer(result_msg)
+    elif result_type == "retry":
+        # Код истёк — запрашиваем новый
+        await message.answer(f"{result_msg}\n\n💡 Введите новый код по одной цифре через пробел")
     else:
         # Ошибка
         await state.clear()
@@ -112,12 +124,12 @@ async def show_accounts(message: Message):
     for i, (name, acc) in enumerate(storage.accounts.items(), 1):
         status = "🟢" if acc["client"].is_connected() else "🔴"
         phone = acc.get("phone", "нет номера")
-        text += f"{i}. {status} <b>{name}</b>\n   📞 {phone}\n\n"
+        text += f"{i}. {status} <b>{name}</b>\n 📞 {phone}\n\n"
     
     await message.answer(text, parse_mode="HTML")
 
 @router.message(F.text == "🗑 Удалить аккаунт")
-async def delete_account_start(message: Message, state: FSMContext):
+async def delete_account(message: Message):
     if not storage.accounts:
         await message.answer("❌ Нет аккаунтов для удаления")
         return
@@ -127,11 +139,10 @@ async def delete_account_start(message: Message, state: FSMContext):
     for i, name in enumerate(acc_list, 1):
         text += f"{i}. {name}\n"
     
-    await state.set_state("deleting_account")  # Устанавливаем состояние
-    await message.answer(text + "\nОтправьте номер:", reply_markup=cancel_kb())
+    await message.answer(text + "\nОтправьте номер:")
 
-@router.message(StateFilter("deleting_account"), F.text.regexp(r'^\d+$'))
-async def process_account_deletion(message: Message, state: FSMContext):
+@router.message(F.text.regexp(r'^\d+$'))
+async def process_account_deletion(message: Message):
     try:
         idx = int(message.text) - 1
         acc_list = list(storage.accounts.keys())
@@ -155,9 +166,6 @@ async def process_account_deletion(message: Message, state: FSMContext):
             storage.save_accounts()
             storage.save_targets()
             
-            await state.clear()
             await message.answer(f"✅ Аккаунт '{name}' удален!", reply_markup=accounts_menu())
-        else:
-            await message.answer("❌ Неверный номер! Попробуйте снова:")
     except:
-        await message.answer("❌ Ошибка! Введите правильный номер:")
+        pass
