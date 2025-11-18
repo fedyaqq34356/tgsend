@@ -133,7 +133,7 @@ async def send_telegram_message(client, target_data, text, account_name, media_t
 
         # Отправка в зависимости от типа контента
         if media_type == "text":
-            await client.send_message(recipient, text)
+            await client.send_message(recipient, text, parse_mode='html', link_preview=False)
         elif media_type in ["photo", "video", "document"] and file_id and bot:
             # Создаём временную папку для медиа
             os.makedirs("temp_media", exist_ok=True)
