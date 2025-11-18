@@ -54,3 +54,16 @@ class AssignAccount(StatesGroup):
 class RemoveAssignment(StatesGroup):
     choosing_target = State()
     choosing_account = State()
+
+class MessageWithButton(StatesGroup):
+    choosing_targets = State()       # Выбор получателей
+    waiting_content = State()        # Текст или медиа
+    waiting_button_text = State()    # Текст кнопки
+    waiting_url = State()            # URL кнопки
+
+class ScheduleWithButton(StatesGroup):
+    choosing_targets = State()
+    waiting_content = State()
+    waiting_button_text = State()
+    waiting_url = State()
+    waiting_time = State()
