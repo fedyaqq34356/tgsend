@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-# Загружаем .env файл
+
 load_dotenv()
 
 # Основные настройки
