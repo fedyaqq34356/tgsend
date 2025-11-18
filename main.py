@@ -24,7 +24,7 @@ async def connect_accounts():
         except Exception as e:
             print(f"❌ Ошибка подключения {name}: {e}")
 
-async def scheduler_task():
+async def scheduler_task(bot):
     """Фоновая задача для проверки запланированных сообщений"""
     from datetime import datetime
     import random
@@ -52,7 +52,7 @@ async def scheduler_task():
                     
                     # Проверяем, пришло ли время отправки
                     if now >= send_time:
-                        print(f"⏰ ⚡ ВРЕМЯ ПРИШЛО! Отправка: {msg['text'][:30]}...")
+                        print(f"⏰ ⚡ ВРЕМЯ ПРИШЛО! Отправка: {msg.get('text', '[Медиа]')[:30]}...")
                         
                         target_id = msg["target_id"]
                         
@@ -87,7 +87,15 @@ async def scheduler_task():
                                     await client.connect()
                                 
                                 # Отправляем сообщение
-                                success = await send_telegram_message(client, target_data, msg["text"], acc_name)
+                                success = await send_telegram_message(
+                                    client, 
+                                    target_data, 
+                                    msg.get("text", ""), 
+                                    acc_name,
+                                    media_type=msg.get("content_type", "text"),
+                                    file_id=msg.get("file_id"),
+                                    bot=bot
+                                )
                                 
                                 if success:
                                     success_count += 1
@@ -145,8 +153,8 @@ async def main():
     dp.include_router(stats.router)
     dp.include_router(start.router)  # Start должен быть последним!
     
-    # Запускаем планировщик
-    asyncio.create_task(scheduler_task())
+    # Запускаем планировщик с объектом bot
+    asyncio.create_task(scheduler_task(bot))
     
     # Запускаем бота
     print("🤖 Бот запущен!")
