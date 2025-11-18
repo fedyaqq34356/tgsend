@@ -1,6 +1,7 @@
 # handlers/messages.py
 from aiogram import Router, F
 from aiogram.types import Message
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from states.states import SendMessage
 from keyboards.main_kb import cancel_kb, main_menu, content_type_kb
