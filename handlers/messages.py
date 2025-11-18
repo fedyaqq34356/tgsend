@@ -86,7 +86,12 @@ async def process_content_type(message: Message, state: FSMContext):
 async def process_message_text(message: Message, state: FSMContext):
     data = await state.get_data()
     target_ids = data["target_ids"]
-    text = message.text
+    
+    # Извлекаем текст с HTML-форматированием
+    if message.html_text:
+        text = message.html_text  # Сохраняет форматирование!
+    else:
+        text = message.text
     
     await message.answer(f"📤 Отправка {len(target_ids)} получателям...")
     
