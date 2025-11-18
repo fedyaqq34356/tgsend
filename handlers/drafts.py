@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from states.states import CreateDraft, ConfigureDraft, SendDraft, DeleteDraft
-from keyboards.main_kb import cancel_kb, drafts_menu, main_menu
+from keyboards.main_kb import cancel_kb, drafts_menu, main_menu, content_type_kb
 from database.storage import storage
 from utils.telethon_auth import send_telegram_message
 import random
@@ -13,14 +13,70 @@ router = Router()
 # === Создать черновик ===
 @router.message(F.text == "➕ Создать черновик")
 async def create_draft_start(message: Message, state: FSMContext):
-    await state.set_state(CreateDraft.waiting_text)
-    await message.answer("Введите текст черновика:", reply_markup=cancel_kb())
+    await state.set_state(CreateDraft.waiting_content_type)
+    await message.answer("Что создать?", reply_markup=content_type_kb())
+
+@router.message(CreateDraft.waiting_content_type)
+async def process_draft_content_type(message: Message, state: FSMContext):
+    content_type = message.text
+    
+    if content_type == "💬 Текст":
+        await state.update_data(content_type="text")
+        await state.set_state(CreateDraft.waiting_text)
+        await message.answer("Введите текст черновика:", reply_markup=cancel_kb())
+    elif content_type == "🖼 Фото":
+        await state.update_data(content_type="photo")
+        await state.set_state(CreateDraft.waiting_media)
+        await message.answer("Отправьте фото (можно с подписью):", reply_markup=cancel_kb())
+    elif content_type == "🎥 Видео":
+        await state.update_data(content_type="video")
+        await state.set_state(CreateDraft.waiting_media)
+        await message.answer("Отправьте видео (можно с подписью):", reply_markup=cancel_kb())
+    elif content_type == "📎 Файл":
+        await state.update_data(content_type="document")
+        await state.set_state(CreateDraft.waiting_media)
+        await message.answer("Отправьте файл (можно с подписью):", reply_markup=cancel_kb())
+    else:
+        await message.answer("❌ Выберите тип из кнопок!")
 
 @router.message(CreateDraft.waiting_text)
 async def process_draft_text(message: Message, state: FSMContext):
+    data = await state.get_data()
     draft = {
         "id": len(storage.drafts) + 1,
         "text": message.text,
+        "content_type": data.get("content_type", "text"),
+        "target_ids": [],
+        "accounts": []
+    }
+    storage.drafts.append(draft)
+    storage.save_drafts()
+    await state.clear()
+    await message.answer(f"✅ Черновик #{draft['id']} создан!", reply_markup=drafts_menu())
+
+@router.message(CreateDraft.waiting_media)
+async def process_draft_media(message: Message, state: FSMContext):
+    data = await state.get_data()
+    content_type = data["content_type"]
+    caption = message.caption or ""
+    
+    file_id = None
+    if content_type == "photo" and message.photo:
+        file_id = message.photo[-1].file_id
+    elif content_type == "video" and message.video:
+        file_id = message.video.file_id
+    elif content_type == "document" and message.document:
+        file_id = message.document.file_id
+    
+    if not file_id:
+        await message.answer("❌ Не удалось получить медиа! Попробуйте снова:")
+        return
+    
+    draft = {
+        "id": len(storage.drafts) + 1,
+        "text": caption,
+        "content_type": content_type,
+        "file_id": file_id,
         "target_ids": [],
         "accounts": []
     }
@@ -38,7 +94,8 @@ async def show_drafts(message: Message):
     
     text = "📝 <b>Черновики:</b>\n\n"
     for draft in storage.drafts:
-        text += f"#{draft['id']}: {draft['text'][:50]}...\n"
+        type_emoji = {"text": "💬", "photo": "🖼", "video": "🎥", "document": "📎"}.get(draft.get("content_type", "text"), "💬")
+        text += f"#{draft['id']} {type_emoji}: {draft['text'][:50] if draft.get('text') else '[Медиа]'}...\n"
         text += f"Получатели: {len(draft['target_ids'])} | Аккаунты: {len(draft['accounts'])}\n\n"
     
     await message.answer(text, parse_mode="HTML")
@@ -52,7 +109,7 @@ async def configure_draft_start(message: Message, state: FSMContext):
     
     text = "Выберите черновик для настройки:\n\n"
     for draft in storage.drafts:
-        text += f"{draft['id']}. {draft['text'][:40]}...\n"
+        text += f"{draft['id']}. {draft['text'][:40] if draft.get('text') else '[Медиа]'}...\n"
     
     await state.set_state(ConfigureDraft.choosing_draft)
     await message.answer(text, reply_markup=cancel_kb())
@@ -154,7 +211,7 @@ async def send_draft_start(message: Message, state: FSMContext):
     
     text = "Выберите черновик для отправки:\n\n"
     for draft in storage.drafts:
-        text += f"{draft['id']}. {draft['text'][:40]}...\n"
+        text += f"{draft['id']}. {draft['text'][:40] if draft.get('text') else '[Медиа]'}...\n"
     
     await state.set_state(SendDraft.choosing_draft)
     await message.answer(text, reply_markup=cancel_kb())
@@ -186,7 +243,11 @@ async def process_draft_send(message: Message, state: FSMContext):
                 for acc_name in assigned:
                     if acc_name in storage.accounts:
                         client = storage.accounts[acc_name]["client"]
-                        success = await send_telegram_message(client, target_data, draft["text"], acc_name)
+                        success = await send_telegram_message(
+                            client, target_data, draft.get("text", ""), acc_name,
+                            media_type=draft.get("content_type", "text"),
+                            file_id=draft.get("file_id")
+                        )
                         if success:
                             total_sent += 1
                         await asyncio.sleep(2)
@@ -196,7 +257,7 @@ async def process_draft_send(message: Message, state: FSMContext):
     except:
         await message.answer("❌ Ошибка отправки!")
 
-# === Удалить черновик (С ОТДЕЛЬНЫМ СОСТОЯНИЕМ!) ===
+# === Удалить черновик ===
 @router.message(F.text == "🗑 Удалить черновик")
 async def delete_draft_start(message: Message, state: FSMContext):
     if not storage.drafts:
@@ -205,7 +266,7 @@ async def delete_draft_start(message: Message, state: FSMContext):
     
     text = "Выберите черновик для удаления:\n\n"
     for draft in storage.drafts:
-        text += f"{draft['id']}. {draft['text'][:40]}...\n"
+        text += f"{draft['id']}. {draft['text'][:40] if draft.get('text') else '[Медиа]'}...\n"
     
     await state.set_state(DeleteDraft.choosing_draft)
     await message.answer(text + "\nОтправьте номер черновика:", reply_markup=cancel_kb())
