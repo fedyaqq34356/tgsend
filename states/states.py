@@ -15,11 +15,15 @@ class AddTarget(StatesGroup):
     waiting_chat_id = State()
 
 class SendMessage(StatesGroup):
-    choosing_target = State()
+    choosing_targets = State()  # Изменено на множественное
+    waiting_content_type = State()  # НОВОЕ
     waiting_text = State()
+    waiting_media = State()  # НОВОЕ
 
 class CreateDraft(StatesGroup):
+    waiting_content_type = State()  # НОВОЕ
     waiting_text = State()
+    waiting_media = State()  # НОВОЕ
 
 class ConfigureDraft(StatesGroup):
     choosing_draft = State()
@@ -30,15 +34,17 @@ class ConfigureDraft(StatesGroup):
 class SendDraft(StatesGroup):
     choosing_draft = State()
 
-class DeleteDraft(StatesGroup):  # НОВОЕ!
+class DeleteDraft(StatesGroup):
     choosing_draft = State()
 
 class ScheduleMessage(StatesGroup):
-    choosing_target = State()
+    choosing_targets = State()  # Изменено на множественное
+    waiting_content_type = State()  # НОВОЕ
     waiting_text = State()
+    waiting_media = State()  # НОВОЕ
     waiting_time = State()
 
-class DeleteScheduled(StatesGroup):  # НОВОЕ!
+class DeleteScheduled(StatesGroup):
     choosing_message = State()
 
 class AssignAccount(StatesGroup):
