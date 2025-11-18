@@ -77,7 +77,13 @@ async def process_schedule_content_type(message: Message, state: FSMContext):
 
 @router.message(ScheduleMessage.waiting_text)
 async def process_schedule_text(message: Message, state: FSMContext):
-    await state.update_data(text=message.text)
+    # Извлекаем текст с HTML-форматированием
+    if message.html_text:
+        text = message.html_text
+    else:
+        text = message.text
+    
+    await state.update_data(text=text)
     await state.set_state(ScheduleMessage.waiting_time)
     
     now = datetime.now() + timedelta(hours=2)
