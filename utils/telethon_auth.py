@@ -116,19 +116,32 @@ async def cancel_auth(user_id: int):
             pass
         del auth_processes[user_id]
 
-async def send_telegram_message(client, target_data, text, account_name):
-    """Отправка сообщения через указанный аккаунт"""
+async def send_telegram_message(client, target_data, text, account_name, media_type="text", file_id=None):
+    """Отправка сообщения через указанный аккаунт с поддержкой медиа"""
     try:
         if not client.is_connected():
             await client.connect()
 
+        # Определяем получателя
         if target_data["type"] == "user":
-            await client.send_message(target_data["username"], text)
+            recipient = target_data["username"]
             target_name = f"@{target_data['username']}"
         else:
-            chat_id = int(target_data["chat_id"])
-            await client.send_message(chat_id, text)
+            recipient = int(target_data["chat_id"])
             target_name = f"Группа {target_data['chat_id']}"
+
+        # Отправка в зависимости от типа контента
+        if media_type == "text":
+            await client.send_message(recipient, text)
+        elif media_type == "photo" and file_id:
+            await client.send_file(recipient, file_id, caption=text)
+        elif media_type == "video" and file_id:
+            await client.send_file(recipient, file_id, caption=text)
+        elif media_type == "document" and file_id:
+            await client.send_file(recipient, file_id, caption=text)
+        else:
+            # Fallback на текст
+            await client.send_message(recipient, text)
 
         # Статистика
         storage.stats["sent"] = storage.stats.get("sent", 0) + 1
@@ -138,10 +151,15 @@ async def send_telegram_message(client, target_data, text, account_name):
             storage.account_stats[account_name] = {"sent": 0, "history": []}
 
         storage.account_stats[account_name]["sent"] += 1
+        
+        display_text = text[:50] + "..." if len(text) > 50 else text
+        if media_type != "text":
+            display_text = f"[{media_type.upper()}] {display_text}"
+        
         storage.account_stats[account_name]["history"].append({
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "target": target_name,
-            "text": text[:50] + "..." if len(text) > 50 else text
+            "text": display_text
         })
 
         if len(storage.account_stats[account_name]["history"]) > 100:
