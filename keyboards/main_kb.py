@@ -4,13 +4,11 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 def main_menu():
     kb = [
         [KeyboardButton(text="📱 Аккаунты"), KeyboardButton(text="👥 Получатели")],
-        [KeyboardButton(text="✉️ Отправить"), KeyboardButton(text="🔘 Сообщение с кнопкой")],  # ← новая кнопка
-        [KeyboardButton(text="📝 Черновики"), KeyboardButton(text="⏰ Планирование")],
-        [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="🔗 Назначения")],
-        [KeyboardButton(text="❓ Форматирование")]
+        [KeyboardButton(text="✉️ Отправить"), KeyboardButton(text="📝 Черновики")],
+        [KeyboardButton(text="⏰ Планирование"), KeyboardButton(text="📊 Статистика")],
+        [KeyboardButton(text="🔗 Назначения"), KeyboardButton(text="❓ Форматирование")]
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
-
 
 def accounts_menu():
     kb = [
@@ -40,11 +38,9 @@ def drafts_menu():
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
-
 def scheduler_menu():
     kb = [
-        [KeyboardButton(text="➕ Запланировать текст/медиа")],
-        [KeyboardButton(text="🔘 Запланировать с кнопкой")],  # ← новая
+        [KeyboardButton(text="➕ Запланировать")],
         [KeyboardButton(text="📋 Показать запланированные")],
         [KeyboardButton(text="🗑 Удалить запланированное")],
         [KeyboardButton(text="◀️ Назад")]
