@@ -8,6 +8,7 @@ from telethon.errors import (
 )
 from database.storage import storage
 from datetime import datetime
+import os
 
 # Хранилище активных процессов авторизации (user_id → данные)
 auth_processes = {}
@@ -116,7 +117,7 @@ async def cancel_auth(user_id: int):
             pass
         del auth_processes[user_id]
 
-async def send_telegram_message(client, target_data, text, account_name, media_type="text", file_id=None):
+async def send_telegram_message(client, target_data, text, account_name, media_type="text", file_id=None, bot=None):
     """Отправка сообщения через указанный аккаунт с поддержкой медиа"""
     try:
         if not client.is_connected():
@@ -133,15 +134,32 @@ async def send_telegram_message(client, target_data, text, account_name, media_t
         # Отправка в зависимости от типа контента
         if media_type == "text":
             await client.send_message(recipient, text)
-        elif media_type == "photo" and file_id:
-            await client.send_file(recipient, file_id, caption=text)
-        elif media_type == "video" and file_id:
-            await client.send_file(recipient, file_id, caption=text)
-        elif media_type == "document" and file_id:
-            await client.send_file(recipient, file_id, caption=text)
+        elif media_type in ["photo", "video", "document"] and file_id and bot:
+            # Создаём временную папку для медиа
+            os.makedirs("temp_media", exist_ok=True)
+            
+            # Скачиваем файл через aiogram
+            if media_type == "photo":
+                file_path = f"temp_media/{file_id}.jpg"
+                await bot.download(file_id, destination=file_path)
+            elif media_type == "video":
+                file_path = f"temp_media/{file_id}.mp4"
+                await bot.download(file_id, destination=file_path)
+            elif media_type == "document":
+                file_path = f"temp_media/{file_id}"
+                await bot.download(file_id, destination=file_path)
+            
+            # Отправляем через Telethon
+            await client.send_file(recipient, file_path, caption=text if text else None)
+            
+            # Удаляем временный файл
+            try:
+                os.remove(file_path)
+            except:
+                pass
         else:
             # Fallback на текст
-            await client.send_message(recipient, text)
+            await client.send_message(recipient, text if text else "")
 
         # Статистика
         storage.stats["sent"] = storage.stats.get("sent", 0) + 1
@@ -152,7 +170,7 @@ async def send_telegram_message(client, target_data, text, account_name, media_t
 
         storage.account_stats[account_name]["sent"] += 1
         
-        display_text = text[:50] + "..." if len(text) > 50 else text
+        display_text = text[:50] + "..." if text and len(text) > 50 else (text if text else "")
         if media_type != "text":
             display_text = f"[{media_type.upper()}] {display_text}"
         
@@ -169,4 +187,6 @@ async def send_telegram_message(client, target_data, text, account_name, media_t
         return True
     except Exception as e:
         print(f"Ошибка отправки от {account_name}: {e}")
+        import traceback
+        traceback.print_exc()
         return False
