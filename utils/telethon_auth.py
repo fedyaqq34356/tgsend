@@ -1,17 +1,19 @@
 # utils/telethon_auth.py
+import os
+import traceback
+from datetime import datetime
+
 from telethon import TelegramClient
 from telethon.errors import (
     SessionPasswordNeededError,
     PhoneCodeExpiredError,
     PhoneCodeInvalidError,
-    PhoneCodeHashEmptyError,
 )
 from telethon.tl.types import KeyboardButtonUrl
+
 from aiogram.types import InlineKeyboardMarkup
+
 from database.storage import storage
-from datetime import datetime
-import os
-import traceback
 
 # Хранилище активных процессов авторизации (user_id → данные)
 auth_processes = {}
@@ -81,6 +83,7 @@ async def submit_password(user_id: int, password: str):
 
     try:
         await client.sign_in(password=password.strip())
+
         storage.accounts[auth["session_name"]] = {
             "api_id": auth["api_id"],
             "api_hash": auth["api_hash"],
@@ -110,22 +113,23 @@ async def send_telegram_message(
     account_name: str,
     media_type: str = "text",
     file_id: str = None,
-    bot = None,
-    reply_markup: InlineKeyboardMarkup = None
+    bot=None,
+    reply_markup: InlineKeyboardMarkup = None,
 ) -> bool:
     """
     Универсальная отправка сообщения через Telethon.
     Поддерживает: текст (HTML), медиа, inline-кнопки (URL).
     """
     try:
-        if not await client.is_connected():
+        # Правильная проверка подключения — метод синхронный
+        if not client.is_connected():
             await client.connect()
 
-        # Получатель
+        # Получатель и отображаемое имя — определяем сразу
         recipient = target_data["username"] if target_data["type"] == "user" else int(target_data["chat_id"])
         target_display = f"@{target_data['username']}" if target_data["type"] == "user" else f"чат {target_data['chat_id']}"
 
-        # Преобразуем aiogram-кнопки в Telethon-кнопки
+        # Преобразование aiogram-кнопок в Telethon-кнопки
         buttons = None
         if reply_markup:
             telethon_buttons = []
@@ -138,14 +142,14 @@ async def send_telegram_message(
                     telethon_buttons.append(telethon_row)
             buttons = telethon_buttons if telethon_buttons else None
 
-        # Отправка
+        # Отправка контента
         if media_type == "text" and text:
             await client.send_message(
                 recipient,
                 text,
                 parse_mode="html",
                 link_preview=False,
-                buttons=buttons
+                buttons=buttons,
             )
         elif media_type in ("photo", "video", "document") and file_id and bot:
             os.makedirs("temp_media", exist_ok=True)
@@ -159,7 +163,7 @@ async def send_telegram_message(
                 file_path,
                 caption=text or None,
                 parse_mode="html" if text else None,
-                buttons=buttons
+                buttons=buttons,
             )
 
             try:
@@ -171,10 +175,10 @@ async def send_telegram_message(
                 recipient,
                 text or "Сообщение отправлено",
                 parse_mode="html" if text else None,
-                buttons=buttons
+                buttons=buttons,
             )
 
-        # ─────── Статистика ───────
+        # Статистика
         storage.stats["sent"] = storage.stats.get("sent", 0) + 1
         storage.stats["last_send"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -190,7 +194,7 @@ async def send_telegram_message(
         storage.account_stats[account_name]["history"].append({
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "target": target_display,
-            "text": short_text
+            "text": short_text,
         })
 
         if len(storage.account_stats[account_name]["history"]) > 100:
