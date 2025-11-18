@@ -1,6 +1,7 @@
 # keyboards/main_kb.py
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
+
 def main_menu():
     kb = [
         [KeyboardButton(text="📱 Аккаунты"), KeyboardButton(text="👥 Получатели")],
