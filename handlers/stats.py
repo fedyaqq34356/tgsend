@@ -43,11 +43,15 @@ async def show_account_stats(message: Message):
     text = "📱 <b>Статистика по аккаунтам:</b>\n\n"
     for name, data in storage.account_stats.items():
         text += f"<b>{name}</b>: {data['sent']} сообщений\n"
+        
         if data.get('history'):
-            last = data['history'][-1]
-            text += f"⏰ {last['time']}\n"
-            text += f"📍 {last['target']}\n"
-            text += f"💬 {last['text']}\n"
-        text += "\n"
+            # Показываем последние 10 действий
+            history = data['history'][-10:]
+            text += f"\n📋 <b>Последние {len(history)} действий:</b>\n"
+            for i, msg in enumerate(reversed(history), 1):
+                text += f"{i}. ⏰ {msg['time']}\n"
+                text += f"   📍 {msg['target']}\n"
+                text += f"   💬 {msg['text']}\n\n"
+        text += "─" * 30 + "\n\n"
     
     await message.answer(text, parse_mode="HTML")
