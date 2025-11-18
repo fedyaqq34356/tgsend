@@ -25,17 +25,16 @@ async def connect_accounts():
             print(f"❌ Ошибка подключения {name}: {e}")
 
 async def scheduler_task(bot):
-    """Фоновая задача: проверяет и отправляет запланированные сообщения"""
     from datetime import datetime
     import random
     from aiogram.types import InlineKeyboardMarkup
     from utils.telethon_auth import send_telegram_message
 
-    print("⏰ Планировщик запущен и работает в фоновом режиме.")
+    print("⏰ Планировщик запущен")
 
     while True:
         try:
-            await asyncio.sleep(30)  # Проверка каждые 30 секунд
+            await asyncio.sleep(30)
 
             if not storage.scheduled_messages:
                 continue
@@ -43,91 +42,69 @@ async def scheduler_task(bot):
             now = datetime.now()
             to_remove = []
 
-            for msg in storage.scheduled_messages[:]:  # копия списка, чтобы безопасно удалять
+            for msg in storage.scheduled_messages[:]:
                 try:
                     send_time = datetime.strptime(msg["time"], "%Y-%m-%d %H:%M:%S")
+                    if now < send_time:
+                        continue
 
-                    if now >= send_time:
-                        print(f"⏰ Отправка запланированного сообщения: {send_time.strftime('%d.%m %H:%M')}")
+                    target_id = msg["target_id"]
+                    if target_id not in storage.targets:
+                        to_remove.append(msg)
+                        continue
 
-                        target_id = msg["target_id"]
-                        if target_id not in storage.targets:
-                            print(f"❌ Получатель {target_id} удалён — пропускаем")
-                            to_remove.append(msg)
+                    target_data = storage.targets[target_id]
+                    assigned = msg.get("accounts", []) or target_data.get("assigned_accounts", [])
+                    if not assigned and storage.accounts:
+                        assigned = [random.choice(list(storage.accounts.keys()))]
+
+                    if not assigned:
+                        to_remove.append(msg)
+                        continue
+
+                    reply_markup = None
+                    if msg.get("reply_markup"):
+                        reply_markup = InlineKeyboardMarkup(**msg["reply_markup"])
+
+                    success_count = 0
+                    for acc_name in assigned:
+                        if acc_name not in storage.accounts:
                             continue
+                        client = storage.accounts[acc_name]["client"]
 
-                        target_data = storage.targets[target_id]
-
-                        # Определяем аккаунты для отправки
-                        assigned_accounts = msg.get("accounts", []) or target_data.get("assigned_accounts", [])
-                        if not assigned_accounts and storage.accounts:
-                            assigned_accounts = [random.choice(list(storage.accounts.keys()))]
-
-                        if not assigned_accounts:
-                            print("❌ Нет доступных аккаунтов для отправки!")
-                            to_remove.append(msg)
-                            continue
-
-                        # Подготовка клавиатуры (если есть)
-                        reply_markup = None
-                        if msg.get("reply_markup"):
-                            reply_markup = InlineKeyboardMarkup(**msg["reply_markup"])
-
-                        success_count = 0
-                        for acc_name in assigned_accounts:
-                            if acc_name not in storage.accounts:
+                        if not client.is_connected():  # БЕЗ await
+                            try:
+                                await client.connect()
+                            except Exception as e:
+                                print(f"Не удалось подключить {acc_name}: {e}")
                                 continue
 
-                            client = storage.accounts[acc_name]["client"]
+                        success = await send_telegram_message(
+                            client, target_data, msg.get("text", ""), acc_name,
+                            media_type=msg.get("content_type", "text"),
+                            file_id=msg.get("file_id"),
+                            bot=bot,
+                            reply_markup=reply_markup
+                        )
+                        if success:
+                            success_count += 1
+                        await asyncio.sleep(2)
 
-                            # Подключаемся, если нужно
-                            if not client.is_connected():
-                                try:
-                                    await client.connect()
-                                except Exception as e:
-                                    print(f"⚠️ Не удалось подключить {acc_name}: {e}")
-                                    continue
-
-                            # Отправляем
-                            success = await send_telegram_message(
-                                client=client,
-                                target_data=target_data,
-                                text=msg.get("text", ""),
-                                account_name=acc_name,
-                                media_type=msg.get("content_type", "text"),
-                                file_id=msg.get("file_id"),
-                                bot=bot,
-                                reply_markup=reply_markup
-                            )
-
-                            if success:
-                                success_count += 1
-                                print(f"✅ Отправлено через {acc_name}")
-                            else:
-                                print(f"❌ Ошибка при отправке через {acc_name}")
-
-                            await asyncio.sleep(2)  # Защита от флуда
-
-                        print(f"📊 Запланированное сообщение отправлено: {success_count}/{len(assigned_accounts)}")
-                        to_remove.append(msg)
+                    to_remove.append(msg)
 
                 except Exception as e:
-                    print(f"❌ Ошибка обработки запланированного сообщения: {e}")
-                    import traceback
+                    print(f"Ошибка обработки запланированного: {e}")
                     traceback.print_exc()
                     to_remove.append(msg)
 
-            # Удаляем отправленные/ошибочные задачи
             if to_remove:
-                for msg in to_remove:
-                    if msg in storage.scheduled_messages:
-                        storage.scheduled_messages.remove(msg)
+                for m in to_remove:
+                    if m in storage.scheduled_messages:
+                        storage.scheduled_messages.remove(m)
                 storage.save_scheduled()
-                print(f"🗑 Удалено {len(to_remove)} выполненных/ошибочных задач")
 
         except Exception as e:
-            print(f"❌ КРИТИЧЕСКАЯ ОШИБКА в планировщике: {e}")
-            import traceback
+            print(f"Критическая ошибка планировщика: {e}")
             traceback.print_exc()
             await asyncio.sleep(10)
 
