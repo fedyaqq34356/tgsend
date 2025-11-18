@@ -87,11 +87,8 @@ async def process_message_text(message: Message, state: FSMContext):
     data = await state.get_data()
     target_ids = data["target_ids"]
     
-    # Извлекаем текст с HTML-форматированием
-    if message.html_text:
-        text = message.html_text  # Сохраняет форматирование!
-    else:
-        text = message.text
+    # Используем обычный текст (без форматирования, кроме ссылок)
+    text = message.text
     
     await message.answer(f"📤 Отправка {len(target_ids)} получателям...")
     
@@ -126,7 +123,12 @@ async def process_message_media(message: Message, state: FSMContext):
     data = await state.get_data()
     target_ids = data["target_ids"]
     content_type = data["content_type"]
-    caption = message.caption or ""
+    
+    # Извлекаем подпись с HTML-форматированием
+    if message.caption_html:
+        caption = message.caption_html  # Сохраняет форматирование!
+    else:
+        caption = message.caption or ""
     
     # Получаем file_id медиа
     file_id = None
