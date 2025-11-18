@@ -63,6 +63,16 @@ def assignments_menu():
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
+def content_type_kb():
+    """Клавиатура выбора типа контента"""
+    kb = [
+        [KeyboardButton(text="💬 Текст")],
+        [KeyboardButton(text="🖼 Фото"), KeyboardButton(text="🎥 Видео")],
+        [KeyboardButton(text="📎 Файл")],
+        [KeyboardButton(text="❌ Отмена")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
 def cancel_kb():
     kb = [[KeyboardButton(text="❌ Отмена")]]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
