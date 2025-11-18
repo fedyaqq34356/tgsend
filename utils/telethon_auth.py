@@ -133,7 +133,7 @@ async def send_telegram_message(client, target_data, text, account_name, media_t
 
         # Отправка в зависимости от типа контента
         if media_type == "text":
-            await client.send_message(recipient, text, link_preview=False)
+            await client.send_message(recipient, text, parse_mode='html', link_preview=False)
         elif media_type in ["photo", "video", "document"] and file_id and bot:
             # Создаём временную папку для медиа
             os.makedirs("temp_media", exist_ok=True)
@@ -150,7 +150,7 @@ async def send_telegram_message(client, target_data, text, account_name, media_t
                 await bot.download(file_id, destination=file_path)
             
             # Отправляем через Telethon
-            await client.send_file(recipient, file_path, caption=text if text else None, parse_mode='html')
+            await client.send_file(recipient, file_path, caption=text if text else None)
             
             # Удаляем временный файл
             try:
@@ -159,7 +159,7 @@ async def send_telegram_message(client, target_data, text, account_name, media_t
                 pass
         else:
             # Fallback на текст
-            await client.send_message(recipient, text if text else "", parse_mode='html', link_preview=False)
+            await client.send_message(recipient, text if text else "")
 
         # Статистика
         storage.stats["sent"] = storage.stats.get("sent", 0) + 1
