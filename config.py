@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Основные настройки
+# Основные настройк
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")  # Обязательно укажите в .env
 
 # Список ID пользователей с доступом (пустой = доступ всем)
