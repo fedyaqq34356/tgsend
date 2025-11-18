@@ -102,7 +102,10 @@ async def process_message_text(message: Message, state: FSMContext):
             for acc_name in assigned:
                 if acc_name in storage.accounts:
                     client = storage.accounts[acc_name]["client"]
-                    success = await send_telegram_message(client, target_data, text, acc_name)
+                    success = await send_telegram_message(
+                        client, target_data, text, acc_name, 
+                        media_type="text", bot=message.bot
+                    )
                     if success:
                         success_count += 1
                     await asyncio.sleep(2)
@@ -150,7 +153,7 @@ async def process_message_media(message: Message, state: FSMContext):
                     client = storage.accounts[acc_name]["client"]
                     success = await send_telegram_message(
                         client, target_data, caption, acc_name,
-                        media_type=content_type, file_id=file_id
+                        media_type=content_type, file_id=file_id, bot=message.bot
                     )
                     if success:
                         success_count += 1
