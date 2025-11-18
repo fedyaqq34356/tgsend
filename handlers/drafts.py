@@ -42,9 +42,16 @@ async def process_draft_content_type(message: Message, state: FSMContext):
 @router.message(CreateDraft.waiting_text)
 async def process_draft_text(message: Message, state: FSMContext):
     data = await state.get_data()
+    
+    # Извлекаем текст с HTML-форматированием
+    if message.html_text:
+        text = message.html_text
+    else:
+        text = message.text
+    
     draft = {
         "id": len(storage.drafts) + 1,
-        "text": message.text,
+        "text": text,
         "content_type": data.get("content_type", "text"),
         "target_ids": [],
         "accounts": []
@@ -246,7 +253,8 @@ async def process_draft_send(message: Message, state: FSMContext):
                         success = await send_telegram_message(
                             client, target_data, draft.get("text", ""), acc_name,
                             media_type=draft.get("content_type", "text"),
-                            file_id=draft.get("file_id")
+                            file_id=draft.get("file_id"),
+                            bot=message.bot
                         )
                         if success:
                             total_sent += 1
