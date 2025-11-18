@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from states.states import ScheduleMessage, DeleteScheduled
-from keyboards.main_kb import cancel_kb, scheduler_menu
+from keyboards.main_kb import cancel_kb, scheduler_menu, content_type_kb
 from database.storage import storage
 from datetime import datetime, timedelta
 
@@ -15,7 +15,7 @@ async def schedule_start(message: Message, state: FSMContext):
         await message.answer("❌ Сначала добавьте получателей!")
         return
     
-    text = "Выберите получателя:\n\n"
+    text = "Выберите получателей (номера через запятую или 'all'):\n\n"
     target_list = list(storage.targets.items())
     for i, (tid, data) in enumerate(target_list, 1):
         if data["type"] == "user":
@@ -23,30 +23,96 @@ async def schedule_start(message: Message, state: FSMContext):
         else:
             text += f"{i}. Группа {data['chat_id']}\n"
     
-    await state.set_state(ScheduleMessage.choosing_target)
+    text += "\nПример: 1,3,5 или all"
+    await state.set_state(ScheduleMessage.choosing_targets)
     await message.answer(text, reply_markup=cancel_kb())
 
-@router.message(ScheduleMessage.choosing_target, F.text.regexp(r'^\d+$'))
-async def process_schedule_target(message: Message, state: FSMContext):
+@router.message(ScheduleMessage.choosing_targets)
+async def process_schedule_targets(message: Message, state: FSMContext):
     try:
-        idx = int(message.text) - 1
         target_list = list(storage.targets.keys())
-        if 0 <= idx < len(target_list):
-            target_id = target_list[idx]
-            await state.update_data(target_id=target_id)
-            await state.set_state(ScheduleMessage.waiting_text)
-            await message.answer("Введите текст сообщения:")
+        
+        if message.text.lower() == "all":
+            selected_targets = target_list.copy()
         else:
-            await message.answer("❌ Неверный номер!")
+            indices = [int(x.strip()) - 1 for x in message.text.split(',') if x.strip().isdigit()]
+            selected_targets = [target_list[i] for i in indices if 0 <= i < len(target_list)]
+        
+        if not selected_targets:
+            await message.answer("❌ Получатели не выбраны! Попробуйте снова:")
+            return
+        
+        await state.update_data(target_ids=selected_targets)
+        await state.set_state(ScheduleMessage.waiting_content_type)
+        await message.answer(
+            f"✅ Выбрано получателей: {len(selected_targets)}\n\n"
+            "Что отправить?",
+            reply_markup=content_type_kb()
+        )
     except:
-        await message.answer("❌ Введите номер!")
+        await message.answer("❌ Ошибка! Попробуйте снова:")
+
+@router.message(ScheduleMessage.waiting_content_type)
+async def process_schedule_content_type(message: Message, state: FSMContext):
+    content_type = message.text
+    
+    if content_type == "💬 Текст":
+        await state.update_data(content_type="text")
+        await state.set_state(ScheduleMessage.waiting_text)
+        await message.answer("Введите текст сообщения:", reply_markup=cancel_kb())
+    elif content_type == "🖼 Фото":
+        await state.update_data(content_type="photo")
+        await state.set_state(ScheduleMessage.waiting_media)
+        await message.answer("Отправьте фото (можно с подписью):", reply_markup=cancel_kb())
+    elif content_type == "🎥 Видео":
+        await state.update_data(content_type="video")
+        await state.set_state(ScheduleMessage.waiting_media)
+        await message.answer("Отправьте видео (можно с подписью):", reply_markup=cancel_kb())
+    elif content_type == "📎 Файл":
+        await state.update_data(content_type="document")
+        await state.set_state(ScheduleMessage.waiting_media)
+        await message.answer("Отправьте файл (можно с подписью):", reply_markup=cancel_kb())
+    else:
+        await message.answer("❌ Выберите тип из кнопок!")
 
 @router.message(ScheduleMessage.waiting_text)
 async def process_schedule_text(message: Message, state: FSMContext):
     await state.update_data(text=message.text)
     await state.set_state(ScheduleMessage.waiting_time)
     
-    # Показываем серверное время с поправкой +2 часа для пользователя
+    now = datetime.now() + timedelta(hours=2)
+    await message.answer(
+        f"⏰ Ваше текущее время: {now.strftime('%d.%m.%Y %H:%M')}\n\n"
+        "Когда отправить?\n\n"
+        "Формат: ДД.ММ.ГГГГ ЧЧ:ММ\n"
+        "Пример: 20.12.2025 15:30\n\n"
+        "Или быстрые команды:\n"
+        "• +5м - через 5 минут\n"
+        "• +2ч - через 2 часа\n"
+        "• +1д - через 1 день"
+    )
+
+@router.message(ScheduleMessage.waiting_media)
+async def process_schedule_media(message: Message, state: FSMContext):
+    data = await state.get_data()
+    content_type = data["content_type"]
+    caption = message.caption or ""
+    
+    file_id = None
+    if content_type == "photo" and message.photo:
+        file_id = message.photo[-1].file_id
+    elif content_type == "video" and message.video:
+        file_id = message.video.file_id
+    elif content_type == "document" and message.document:
+        file_id = message.document.file_id
+    
+    if not file_id:
+        await message.answer("❌ Не удалось получить медиа! Попробуйте снова:")
+        return
+    
+    await state.update_data(file_id=file_id, text=caption)
+    await state.set_state(ScheduleMessage.waiting_time)
+    
     now = datetime.now() + timedelta(hours=2)
     await message.answer(
         f"⏰ Ваше текущее время: {now.strftime('%d.%m.%Y %H:%M')}\n\n"
@@ -85,37 +151,44 @@ async def process_schedule_time(message: Message, state: FSMContext):
                 time_part = parts[1].replace('.', ':')
                 time_str = f"{date_part} {time_part}"
             
-            # Парсим введенное время (это время пользователя с его часовым поясом)
             user_time = datetime.strptime(time_str, "%d.%m.%Y %H:%M")
-            
-            # Вычитаем 2 часа для серверного времени
             send_time = user_time - timedelta(hours=2)
         
         data = await state.get_data()
-        target_id = data["target_id"]
-        text = data["text"]
+        target_ids = data["target_ids"]
+        text = data.get("text", "")
+        content_type = data.get("content_type", "text")
+        file_id = data.get("file_id")
         
-        assigned = storage.targets[target_id].get("assigned_accounts", []).copy()
-        
-        storage.scheduled_messages.append({
-            "time": send_time.strftime("%Y-%m-%d %H:%M:%S"),
-            "target_id": target_id,
-            "text": text,
-            "accounts": assigned
-        })
+        for target_id in target_ids:
+            if target_id in storage.targets:
+                assigned = storage.targets[target_id].get("assigned_accounts", []).copy()
+                
+                msg_data = {
+                    "time": send_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "target_id": target_id,
+                    "text": text,
+                    "accounts": assigned,
+                    "content_type": content_type
+                }
+                
+                if file_id:
+                    msg_data["file_id"] = file_id
+                
+                storage.scheduled_messages.append(msg_data)
         
         storage.save_scheduled()
         
-        # Показываем пользователю время с его поправкой
         user_display_time = send_time + timedelta(hours=2)
         
         await state.clear()
         await message.answer(
-            f"✅ Сообщение запланировано на {user_display_time.strftime('%d.%m.%Y %H:%M')}!",
+            f"✅ Сообщения запланированы на {user_display_time.strftime('%d.%m.%Y %H:%M')}!\n"
+            f"Получателей: {len(target_ids)}",
             reply_markup=scheduler_menu()
         )
     except Exception as e:
-        await message.answer(f"❌ Ошибка формата времени!\n{e}")
+        await message.answer(f"❌ Ошибка формата времени! Попробуйте снова.\n\nПример: 20.12.2025 15:30")
 
 # === Показать запланированные ===
 @router.message(F.text == "📋 Показать запланированные")
@@ -126,7 +199,6 @@ async def show_scheduled(message: Message):
     
     text = "⏰ <b>Запланированные сообщения:</b>\n\n"
     for i, msg in enumerate(storage.scheduled_messages, 1):
-        # Парсим серверное время и добавляем 2 часа для отображения
         server_time = datetime.strptime(msg['time'], "%Y-%m-%d %H:%M:%S")
         user_time = server_time + timedelta(hours=2)
         
@@ -135,12 +207,18 @@ async def show_scheduled(message: Message):
         if target_data.get("type") == "user":
             name = f"@{name}"
         
-        text += f"{i}. {user_time.strftime('%d.%m.%Y %H:%M')} → {name}\n"
-        text += f"   {msg['text'][:40]}...\n\n"
+        content_type = msg.get("content_type", "text")
+        type_emoji = {"text": "💬", "photo": "🖼", "video": "🎥", "document": "📎"}.get(content_type, "💬")
+        
+        text += f"{i}. {type_emoji} {user_time.strftime('%d.%m.%Y %H:%M')} → {name}\n"
+        if msg.get('text'):
+            text += f"   {msg['text'][:40]}...\n\n"
+        else:
+            text += "\n"
     
     await message.answer(text, parse_mode="HTML")
 
-# === Удалить запланированное (С ОТДЕЛЬНЫМ СОСТОЯНИЕМ!) ===
+# === Удалить запланированное ===
 @router.message(F.text == "🗑 Удалить запланированное")
 async def delete_scheduled_start(message: Message, state: FSMContext):
     if not storage.scheduled_messages:
@@ -149,7 +227,6 @@ async def delete_scheduled_start(message: Message, state: FSMContext):
     
     text = "Выберите номер для удаления:\n\n"
     for i, msg in enumerate(storage.scheduled_messages, 1):
-        # Показываем время с поправкой
         server_time = datetime.strptime(msg['time'], "%Y-%m-%d %H:%M:%S")
         user_time = server_time + timedelta(hours=2)
         text += f"{i}. {user_time.strftime('%d.%m %H:%M')}\n"
