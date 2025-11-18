@@ -6,12 +6,16 @@ from telethon.errors import (
     PhoneCodeInvalidError,
     PhoneCodeHashEmptyError,
 )
+from telethon.tl.types import KeyboardButtonUrl
+from aiogram.types import InlineKeyboardMarkup
 from database.storage import storage
 from datetime import datetime
 import os
+import traceback
 
 # Хранилище активных процессов авторизации (user_id → данные)
 auth_processes = {}
+
 
 async def start_auth(user_id: int, session_name: str, api_id: int, api_hash: str, phone: str):
     """Начинает процесс авторизации: создаёт клиент и отправляет код."""
@@ -27,20 +31,12 @@ async def start_auth(user_id: int, session_name: str, api_id: int, api_hash: str
             "api_id": api_id,
             "api_hash": api_hash,
         }
-
         return True, "Код отправлен на ваш Telegram."
     except Exception as e:
         return False, f"Ошибка отправки кода: {e}"
 
+
 async def submit_code(user_id: int, raw_input: str):
-    """
-    Принимает ввод пользователя (цифры через пробел или слитно), собирает код и выполняет sign_in.
-    Возвращает:
-        - (True, сообщение) — успех
-        - ("2fa", сообщение) — нужен пароль 2FA
-        - ("retry", сообщение) — код истёк, отправлен новый
-        - (False, сообщение) — ошибка
-    """
     if user_id not in auth_processes:
         return False, "Процесс авторизации не найден."
 
@@ -48,17 +44,13 @@ async def submit_code(user_id: int, raw_input: str):
     client = auth["client"]
     phone = auth["phone"]
 
-    # Извлекаем все цифры из ввода (игнорируем пробелы и другие символы)
     code = ''.join(char for char in raw_input if char.isdigit())
-    
-    # Проверяем длину кода
     if len(code) != 5:
-        return False, f"Код должен состоять ровно из 5 цифр. Получено: {len(code)} цифр(ы).\nПопробуйте снова."
+        return False, f"Код должен состоять ровно из 5 цифр. Получено: {len(code)}.\nПопробуйте снова."
 
     try:
         await client.sign_in(phone, code=code)
 
-        # Успешная авторизация
         storage.accounts[auth["session_name"]] = {
             "api_id": auth["api_id"],
             "api_hash": auth["api_hash"],
@@ -67,25 +59,20 @@ async def submit_code(user_id: int, raw_input: str):
         }
         storage.save_accounts()
         del auth_processes[user_id]
-
         return True, f"✅ Аккаунт '{auth['session_name']}' успешно добавлен!"
 
     except PhoneCodeExpiredError:
-        # Код истёк — запрашиваем новый автоматически
         await client.send_code_request(phone)
-        return "retry", "⏰ Код истёк. Новый код отправлен на ваш Telegram.\n\n💡 Введите новый код (5 цифр через пробел):"
-
+        return "retry", "⏰ Код истёк. Новый код отправлен.\nВведите новый код (5 цифр через пробел):"
     except PhoneCodeInvalidError:
         return False, "❌ Неверный код. Попробуйте снова."
-
     except SessionPasswordNeededError:
         return "2fa", "🔐 Требуется пароль двухфакторной аутентификации:"
-
     except Exception as e:
         return False, f"❌ Неизвестная ошибка: {e}"
 
+
 async def submit_password(user_id: int, password: str):
-    """Завершает авторизацию с 2FA паролем."""
     if user_id not in auth_processes:
         return False, "Процесс авторизации не найден."
 
@@ -94,7 +81,6 @@ async def submit_password(user_id: int, password: str):
 
     try:
         await client.sign_in(password=password.strip())
-
         storage.accounts[auth["session_name"]] = {
             "api_id": auth["api_id"],
             "api_hash": auth["api_hash"],
@@ -103,13 +89,12 @@ async def submit_password(user_id: int, password: str):
         }
         storage.save_accounts()
         del auth_processes[user_id]
-
         return True, f"✅ Аккаунт '{auth['session_name']}' успешно добавлен!"
     except Exception as e:
         return False, f"❌ Ошибка 2FA: {e}"
 
+
 async def cancel_auth(user_id: int):
-    """Отменяет процесс авторизации и закрывает клиент."""
     if user_id in auth_processes:
         try:
             await auth_processes[user_id]["client"].disconnect()
@@ -117,51 +102,79 @@ async def cancel_auth(user_id: int):
             pass
         del auth_processes[user_id]
 
-async def send_telegram_message(client, target_data, text, account_name, media_type="text", file_id=None, bot=None):
-    """Отправка сообщения через указанный аккаунт с поддержкой медиа"""
+
+async def send_telegram_message(
+    client,
+    target_data: dict,
+    text: str,
+    account_name: str,
+    media_type: str = "text",
+    file_id: str = None,
+    bot = None,
+    reply_markup: InlineKeyboardMarkup = None
+) -> bool:
+    """
+    Универсальная отправка сообщения через Telethon.
+    Поддерживает: текст (HTML), медиа, inline-кнопки (URL).
+    """
     try:
-        if not client.is_connected():
+        if not await client.is_connected():
             await client.connect()
 
-        # Определяем получателя
-        if target_data["type"] == "user":
-            recipient = target_data["username"]
-            target_name = f"@{target_data['username']}"
-        else:
-            recipient = int(target_data["chat_id"])
-            target_name = f"Группа {target_data['chat_id']}"
+        # Получатель
+        recipient = target_data["username"] if target_data["type"] == "user" else int(target_data["chat_id"])
+        target_display = f"@{target_data['username']}" if target_data["type"] == "user" else f"чат {target_data['chat_id']}"
 
-        # Отправка в зависимости от типа контента
-        if media_type == "text":
-            await client.send_message(recipient, text, parse_mode='html', link_preview=False)
-        elif media_type in ["photo", "video", "document"] and file_id and bot:
-            # Создаём временную папку для медиа
+        # Преобразуем aiogram-кнопки в Telethon-кнопки
+        buttons = None
+        if reply_markup:
+            telethon_buttons = []
+            for row in reply_markup.inline_keyboard:
+                telethon_row = []
+                for btn in row:
+                    if btn.url:
+                        telethon_row.append(KeyboardButtonUrl(btn.text, btn.url))
+                if telethon_row:
+                    telethon_buttons.append(telethon_row)
+            buttons = telethon_buttons if telethon_buttons else None
+
+        # Отправка
+        if media_type == "text" and text:
+            await client.send_message(
+                recipient,
+                text,
+                parse_mode="html",
+                link_preview=False,
+                buttons=buttons
+            )
+        elif media_type in ("photo", "video", "document") and file_id and bot:
             os.makedirs("temp_media", exist_ok=True)
-            
-            # Скачиваем файл через aiogram
-            if media_type == "photo":
-                file_path = f"temp_media/{file_id}.jpg"
-                await bot.download(file_id, destination=file_path)
-            elif media_type == "video":
-                file_path = f"temp_media/{file_id}.mp4"
-                await bot.download(file_id, destination=file_path)
-            elif media_type == "document":
-                file_path = f"temp_media/{file_id}"
-                await bot.download(file_id, destination=file_path)
-            
-            # Отправляем через Telethon
-            await client.send_file(recipient, file_path, caption=text if text else None)
-            
-            # Удаляем временный файл
+            ext = ".jpg" if media_type == "photo" else ".mp4" if media_type == "video" else ""
+            file_path = f"temp_media/{file_id}{ext}"
+
+            await bot.download(file_id, destination=file_path)
+
+            await client.send_file(
+                recipient,
+                file_path,
+                caption=text or None,
+                parse_mode="html" if text else None,
+                buttons=buttons
+            )
+
             try:
                 os.remove(file_path)
-            except:
+            except OSError:
                 pass
         else:
-            # Fallback на текст
-            await client.send_message(recipient, text if text else "")
+            await client.send_message(
+                recipient,
+                text or "Сообщение отправлено",
+                parse_mode="html" if text else None,
+                buttons=buttons
+            )
 
-        # Статистика
+        # ─────── Статистика ───────
         storage.stats["sent"] = storage.stats.get("sent", 0) + 1
         storage.stats["last_send"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -169,15 +182,15 @@ async def send_telegram_message(client, target_data, text, account_name, media_t
             storage.account_stats[account_name] = {"sent": 0, "history": []}
 
         storage.account_stats[account_name]["sent"] += 1
-        
-        display_text = text[:50] + "..." if text and len(text) > 50 else (text if text else "")
-        if media_type != "text":
-            display_text = f"[{media_type.upper()}] {display_text}"
-        
+
+        short_text = (text or "[медиа]")[:50]
+        if len(text or "") > 50:
+            short_text += "..."
+
         storage.account_stats[account_name]["history"].append({
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "target": target_name,
-            "text": display_text
+            "target": target_display,
+            "text": short_text
         })
 
         if len(storage.account_stats[account_name]["history"]) > 100:
@@ -185,8 +198,8 @@ async def send_telegram_message(client, target_data, text, account_name, media_t
 
         storage.save_stats()
         return True
+
     except Exception as e:
-        print(f"Ошибка отправки от {account_name}: {e}")
-        import traceback
+        print(f"[ERROR] Ошибка отправки от {account_name} → {target_display}: {e}")
         traceback.print_exc()
         return False
