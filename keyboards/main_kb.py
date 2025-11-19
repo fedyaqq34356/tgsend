@@ -7,7 +7,7 @@ def main_menu():
         [KeyboardButton(text="📱 Аккаунты"), KeyboardButton(text="👥 Получатели")],
         [KeyboardButton(text="✉️ Отправить"), KeyboardButton(text="📝 Черновики")],
         [KeyboardButton(text="⏰ Планирование"), KeyboardButton(text="📊 Статистика")],
-        [KeyboardButton(text="🔗 Назначения"), KeyboardButton(text="❓ Форматирование")]
+        [KeyboardButton(text="🔗 Назначения")]
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
