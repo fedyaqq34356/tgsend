@@ -24,6 +24,7 @@ def targets_menu():
     kb = [
         [KeyboardButton(text="➕ Добавить получателя")],
         [KeyboardButton(text="📋 Список получателей")],
+        [KeyboardButton(text="🗑 Удалить получателя")],
         [KeyboardButton(text="◀️ Назад")]
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
