@@ -5,7 +5,7 @@ from typing import List
 
 # Обязательный токен бота — задаётся в Variables на Railway
 BOT_TOKEN: str = os.getenv("BOT_TOKEN")
-if not BOTЕН:
+if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN не указан! Добавьте переменную BOT_TOKEN в разделе Variables на Railway.")
 
 # Список админов (через запятую, без пробелов: 123456789,987654321)
