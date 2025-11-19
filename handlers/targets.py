@@ -2,7 +2,7 @@
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
-from states.states import AddTarget, DeleteTarget
+from states.states import AddTarget, DeleteTarget  # DeleteTarget будет добавлен в states.py
 from keyboards.main_kb import cancel_kb, targets_menu
 from database.storage import storage
 
