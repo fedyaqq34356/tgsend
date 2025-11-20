@@ -10,8 +10,8 @@ from database.storage import storage
 from datetime import datetime
 import os
 
-
 auth_processes = {}
+
 
 async def start_auth(user_id: int, session_name: str, api_id: int, api_hash: str, phone: str):
     """Начинает процесс авторизации: создаёт клиент и отправляет код."""
@@ -19,7 +19,6 @@ async def start_auth(user_id: int, session_name: str, api_id: int, api_hash: str
         client = TelegramClient(f"sessions/{session_name}", api_id, api_hash)
         await client.connect()
         await client.send_code_request(phone)
-
         auth_processes[user_id] = {
             "client": client,
             "phone": phone,
@@ -27,14 +26,14 @@ async def start_auth(user_id: int, session_name: str, api_id: int, api_hash: str
             "api_id": api_id,
             "api_hash": api_hash,
         }
-
         return True, "Код отправлен на ваш Telegram."
     except Exception as e:
         return False, f"Ошибка отправки кода: {e}"
 
+
 async def submit_code(user_id: int, raw_input: str):
     """
-    Принимает ввод пользователя, собирает код и выполняет sign_in.
+    Принимает код от пользователя и выполняет sign_in.
     Возвращает:
         - (True, сообщение) — успех
         - ("2fa", сообщение) — нужен пароль 2FA
@@ -47,10 +46,7 @@ async def submit_code(user_id: int, raw_input: str):
     auth = auth_processes[user_id]
     client = auth["client"]
     phone = auth["phone"]
-
-
     code = ''.join(char for char in raw_input if char.isdigit())
-    
 
     if len(code) != 5:
         return False, f"Код должен состоять ровно из 5 цифр. Получено: {len(code)} цифр(ы).\nПопробуйте снова."
@@ -59,6 +55,7 @@ async def submit_code(user_id: int, raw_input: str):
         await client.sign_in(phone, code=code)
 
 
+        storage.accounts[auth["session_name"]] = {
             "api_id": auth["api_id"],
             "api_hash": auth["api_hash"],
             "phone": phone,
@@ -70,7 +67,6 @@ async def submit_code(user_id: int, raw_input: str):
         return True, f"✅ Аккаунт '{auth['session_name']}' успешно добавлен!"
 
     except PhoneCodeExpiredError:
-
         await client.send_code_request(phone)
         return "retry", "⏰ Код истёк. Новый код отправлен на ваш Telegram.\n\n💡 Введите новый код (5 цифр через пробел):"
 
@@ -82,6 +78,7 @@ async def submit_code(user_id: int, raw_input: str):
 
     except Exception as e:
         return False, f"❌ Неизвестная ошибка: {e}"
+
 
 async def submit_password(user_id: int, password: str):
     """Завершает авторизацию с 2FA паролем."""
@@ -104,8 +101,10 @@ async def submit_password(user_id: int, password: str):
         del auth_processes[user_id]
 
         return True, f"✅ Аккаунт '{auth['session_name']}' успешно добавлен!"
+
     except Exception as e:
         return False, f"❌ Ошибка 2FA: {e}"
+
 
 async def cancel_auth(user_id: int):
     """Отменяет процесс авторизации и закрывает клиент."""
@@ -116,12 +115,12 @@ async def cancel_auth(user_id: int):
             pass
         del auth_processes[user_id]
 
+
 async def send_telegram_message(client, target_data, text, account_name, media_type="text", file_id=None, bot=None):
-    """Отправка сообщения через указанный аккаунт с поддержкой медиа"""
+    """Отправка сообщения через указанный аккаунт с поддержкой медиа."""
     try:
         if not client.is_connected():
             await client.connect()
-
 
         if target_data["type"] == "user":
             recipient = target_data["username"]
@@ -130,35 +129,29 @@ async def send_telegram_message(client, target_data, text, account_name, media_t
             recipient = int(target_data["chat_id"])
             target_name = f"Группа {target_data['chat_id']}"
 
-
         if media_type == "text":
             await client.send_message(recipient, text, parse_mode='html', link_preview=False)
-        elif media_type in ["photo", "video", "document"] and file_id and bot:
 
+        elif media_type in ["photo", "video", "document"] and file_id and bot:
             os.makedirs("temp_media", exist_ok=True)
-            
-  
+
             if media_type == "photo":
                 file_path = f"temp_media/{file_id}.jpg"
-                await bot.download(file_id, destination=file_path)
             elif media_type == "video":
                 file_path = f"temp_media/{file_id}.mp4"
-                await bot.download(file_id, destination=file_path)
-            elif media_type == "document":
+            else:  # document
                 file_path = f"temp_media/{file_id}"
-                await bot.download(file_id, destination=file_path)
-            
 
+            await bot.download(file_id, destination=file_path)
             await client.send_file(recipient, file_path, caption=text if text else None)
-            
 
             try:
                 os.remove(file_path)
             except:
                 pass
         else:
-
             await client.send_message(recipient, text if text else "")
+
 
         storage.stats["sent"] = storage.stats.get("sent", 0) + 1
         storage.stats["last_send"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -167,11 +160,11 @@ async def send_telegram_message(client, target_data, text, account_name, media_t
             storage.account_stats[account_name] = {"sent": 0, "history": []}
 
         storage.account_stats[account_name]["sent"] += 1
-        
+
         display_text = text[:50] + "..." if text and len(text) > 50 else (text if text else "")
         if media_type != "text":
             display_text = f"[{media_type.upper()}] {display_text}"
-        
+
         storage.account_stats[account_name]["history"].append({
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "target": target_name,
@@ -183,6 +176,7 @@ async def send_telegram_message(client, target_data, text, account_name, media_t
 
         storage.save_stats()
         return True
+
     except Exception as e:
         print(f"Ошибка отправки от {account_name}: {e}")
         import traceback
