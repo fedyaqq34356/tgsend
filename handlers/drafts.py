@@ -10,7 +10,7 @@ import asyncio
 
 router = Router()
 
-# === Создать черновик ===
+
 @router.message(F.text == "➕ Создать черновик")
 async def create_draft_start(message: Message, state: FSMContext):
     await state.set_state(CreateDraft.waiting_content_type)
@@ -43,7 +43,7 @@ async def process_draft_content_type(message: Message, state: FSMContext):
 async def process_draft_text(message: Message, state: FSMContext):
     data = await state.get_data()
     
-    # Извлекаем текст с HTML-форматированием
+
     if message.html_text:
         text = message.html_text
     else:
@@ -92,7 +92,7 @@ async def process_draft_media(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(f"✅ Черновик #{draft['id']} создан!", reply_markup=drafts_menu())
 
-# === Список черновиков ===
+
 @router.message(F.text == "📋 Список черновиков")
 async def show_drafts(message: Message):
     if not storage.drafts:
@@ -107,7 +107,7 @@ async def show_drafts(message: Message):
     
     await message.answer(text, parse_mode="HTML")
 
-# === Настроить черновик ===
+
 @router.message(F.text == "⚙️ Настроить черновик")
 async def configure_draft_start(message: Message, state: FSMContext):
     if not storage.drafts:
@@ -209,7 +209,7 @@ async def process_accounts_selection(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(f"✅ Аккаунты настроены ({len(draft['accounts'])})", reply_markup=drafts_menu())
 
-# === Отправить черновик ===
+
 @router.message(F.text == "📤 Отправить черновик")
 async def send_draft_start(message: Message, state: FSMContext):
     if not storage.drafts:
@@ -265,7 +265,6 @@ async def process_draft_send(message: Message, state: FSMContext):
     except:
         await message.answer("❌ Ошибка отправки!")
 
-# === Удалить черновик ===
 @router.message(F.text == "🗑 Удалить черновик")
 async def delete_draft_start(message: Message, state: FSMContext):
     if not storage.drafts:
