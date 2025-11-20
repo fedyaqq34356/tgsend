@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 router = Router()
 
-# === Запланировать сообщение ===
+
 @router.message(F.text == "➕ Запланировать")
 async def schedule_start(message: Message, state: FSMContext):
     if not storage.targets:
@@ -77,7 +77,7 @@ async def process_schedule_content_type(message: Message, state: FSMContext):
 
 @router.message(ScheduleMessage.waiting_text)
 async def process_schedule_text(message: Message, state: FSMContext):
-    # Извлекаем текст с HTML-форматированием
+
     if message.html_text:
         text = message.html_text
     else:
@@ -136,7 +136,7 @@ async def process_schedule_time(message: Message, state: FSMContext):
     try:
         time_str = message.text.strip()
         
-        # Обработка быстрых команд
+
         if time_str.startswith('+'):
             now = datetime.now()
             amount = int(''.join(filter(str.isdigit, time_str)))
@@ -150,7 +150,7 @@ async def process_schedule_time(message: Message, state: FSMContext):
             else:
                 raise ValueError("Неизвестный формат быстрой команды")
         else:
-            # Обычный ввод даты и времени
+
             parts = time_str.split(' ')
             if len(parts) == 2:
                 date_part = parts[0]
@@ -196,7 +196,7 @@ async def process_schedule_time(message: Message, state: FSMContext):
     except Exception as e:
         await message.answer(f"❌ Ошибка формата времени! Попробуйте снова.\n\nПример: 20.12.2025 15:30")
 
-# === Показать запланированные ===
+
 @router.message(F.text == "📋 Показать запланированные")
 async def show_scheduled(message: Message):
     if not storage.scheduled_messages:
@@ -224,7 +224,7 @@ async def show_scheduled(message: Message):
     
     await message.answer(text, parse_mode="HTML")
 
-# === Удалить запланированное ===
+
 @router.message(F.text == "🗑 Удалить запланированное")
 async def delete_scheduled_start(message: Message, state: FSMContext):
     if not storage.scheduled_messages:
