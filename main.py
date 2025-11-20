@@ -34,7 +34,7 @@ async def scheduler_task(bot):
     
     while True:
         try:
-            await asyncio.sleep(30)  # Проверка каждые 30 секунд
+            await asyncio.sleep(30) 
             
             if not storage.scheduled_messages:
                 continue
