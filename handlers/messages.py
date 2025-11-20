@@ -87,9 +87,9 @@ async def process_message_text(message: Message, state: FSMContext):
     data = await state.get_data()
     target_ids = data["target_ids"]
     
-    # Извлекаем текст с HTML-форматированием
+
     if message.html_text:
-        text = message.html_text  # Сохраняет форматирование!
+        text = message.html_text
     else:
         text = message.text
     
@@ -128,7 +128,7 @@ async def process_message_media(message: Message, state: FSMContext):
     content_type = data["content_type"]
     caption = message.caption or ""
     
-    # Получаем file_id медиа
+
     file_id = None
     if content_type == "photo" and message.photo:
         file_id = message.photo[-1].file_id
