@@ -12,7 +12,7 @@ class Storage:
         self.stats = {"sent": 0, "last_send": None}
         self.account_stats = {}
         
-        # Создаем папку data если её нет
+
         os.makedirs("data", exist_ok=True)
         os.makedirs("sessions", exist_ok=True)
     
