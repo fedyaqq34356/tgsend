@@ -11,7 +11,7 @@ async def show_general_stats(message: Message):
     text += f"Всего отправлено: {storage.stats.get('sent', 0)}\n"
     text += f"Последняя отправка: {storage.stats.get('last_send', 'никогда')}\n\n"
     
-    # Показываем последнее сообщение из любого аккаунта
+
     latest_time = None
     latest_acc = None
     latest_msg = None
@@ -45,7 +45,7 @@ async def show_account_stats(message: Message):
         text += f"<b>{name}</b>: {data['sent']} сообщений\n"
         
         if data.get('history'):
-            # Показываем последние 10 действий
+
             history = data['history'][-10:]
             text += f"\n📋 <b>Последние {len(history)} действий:</b>\n"
             for i, msg in enumerate(reversed(history), 1):
