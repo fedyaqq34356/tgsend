@@ -10,13 +10,13 @@ router = Router()
 
 def check_access(user_id: int) -> bool:
     """Проверяет, есть ли у пользователя доступ к боту"""
-    if not ADMIN_IDS:  # Если список пустой - доступ всем
+    if not ADMIN_IDS:
         return True
     return user_id in ADMIN_IDS
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
-    # Выводим ID пользователя для настройки ADMIN_IDS
+
     print(f"[INFO] Пользователь {message.from_user.id} ({message.from_user.full_name}) запустил бота")
     
     if not check_access(message.from_user.id):
