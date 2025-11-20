@@ -2,7 +2,7 @@
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
-from states.states import AddTarget, DeleteTarget  # DeleteTarget будет добавлен в states.py
+from states.states import AddTarget, DeleteTarget 
 from keyboards.main_kb import cancel_kb, targets_menu
 from database.storage import storage
 
@@ -92,7 +92,7 @@ async def show_targets(message: Message):
     
     await message.answer(text, parse_mode="HTML")
 
-# === НОВОЕ: Удаление получателя ===
+
 @router.message(F.text == "🗑 Удалить получателя")
 async def delete_target_start(message: Message, state: FSMContext):
     if not storage.targets:
@@ -121,27 +121,25 @@ async def process_target_deletion(message: Message, state: FSMContext):
             target_id = target_list[idx]
             target_data = storage.targets[target_id]
             
-            # Формируем читаемое имя
+
             if target_data["type"] == "user":
                 display_name = f"@{target_data['username']}"
             else:
                 display_name = f"Группу {target_data['chat_id']}"
             
-            # Удаляем получателя
             del storage.targets[target_id]
             
-            # Очищаем ссылки на этого получателя в черновиках
             for draft in storage.drafts:
                 if target_id in draft.get("target_ids", []):
                     draft["target_ids"].remove(target_id)
             
-            # Очищаем ссылки в запланированных сообщениях
+
             storage.scheduled_messages = [
                 msg for msg in storage.scheduled_messages 
                 if msg.get("target_id") != target_id
             ]
             
-            # Сохраняем все изменения
+
             storage.save_targets()
             storage.save_drafts()
             storage.save_scheduled()
