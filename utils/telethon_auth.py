@@ -10,7 +10,7 @@ from database.storage import storage
 from datetime import datetime
 import os
 
-# Хранилище активных процессов авторизации (user_id → данные)
+
 auth_processes = {}
 
 async def start_auth(user_id: int, session_name: str, api_id: int, api_hash: str, phone: str):
@@ -34,7 +34,7 @@ async def start_auth(user_id: int, session_name: str, api_id: int, api_hash: str
 
 async def submit_code(user_id: int, raw_input: str):
     """
-    Принимает ввод пользователя (цифры через пробел или слитно), собирает код и выполняет sign_in.
+    Принимает ввод пользователя, собирает код и выполняет sign_in.
     Возвращает:
         - (True, сообщение) — успех
         - ("2fa", сообщение) — нужен пароль 2FA
@@ -48,18 +48,17 @@ async def submit_code(user_id: int, raw_input: str):
     client = auth["client"]
     phone = auth["phone"]
 
-    # Извлекаем все цифры из ввода (игнорируем пробелы и другие символы)
+
     code = ''.join(char for char in raw_input if char.isdigit())
     
-    # Проверяем длину кода
+
     if len(code) != 5:
         return False, f"Код должен состоять ровно из 5 цифр. Получено: {len(code)} цифр(ы).\nПопробуйте снова."
 
     try:
         await client.sign_in(phone, code=code)
 
-        # Успешная авторизация
-        storage.accounts[auth["session_name"]] = {
+
             "api_id": auth["api_id"],
             "api_hash": auth["api_hash"],
             "phone": phone,
@@ -71,7 +70,7 @@ async def submit_code(user_id: int, raw_input: str):
         return True, f"✅ Аккаунт '{auth['session_name']}' успешно добавлен!"
 
     except PhoneCodeExpiredError:
-        # Код истёк — запрашиваем новый автоматически
+
         await client.send_code_request(phone)
         return "retry", "⏰ Код истёк. Новый код отправлен на ваш Telegram.\n\n💡 Введите новый код (5 цифр через пробел):"
 
@@ -123,7 +122,7 @@ async def send_telegram_message(client, target_data, text, account_name, media_t
         if not client.is_connected():
             await client.connect()
 
-        # Определяем получателя
+
         if target_data["type"] == "user":
             recipient = target_data["username"]
             target_name = f"@{target_data['username']}"
@@ -131,14 +130,14 @@ async def send_telegram_message(client, target_data, text, account_name, media_t
             recipient = int(target_data["chat_id"])
             target_name = f"Группа {target_data['chat_id']}"
 
-        # Отправка в зависимости от типа контента
+
         if media_type == "text":
             await client.send_message(recipient, text, parse_mode='html', link_preview=False)
         elif media_type in ["photo", "video", "document"] and file_id and bot:
-            # Создаём временную папку для медиа
+
             os.makedirs("temp_media", exist_ok=True)
             
-            # Скачиваем файл через aiogram
+  
             if media_type == "photo":
                 file_path = f"temp_media/{file_id}.jpg"
                 await bot.download(file_id, destination=file_path)
@@ -149,19 +148,18 @@ async def send_telegram_message(client, target_data, text, account_name, media_t
                 file_path = f"temp_media/{file_id}"
                 await bot.download(file_id, destination=file_path)
             
-            # Отправляем через Telethon
+
             await client.send_file(recipient, file_path, caption=text if text else None)
             
-            # Удаляем временный файл
+
             try:
                 os.remove(file_path)
             except:
                 pass
         else:
-            # Fallback на текст
+
             await client.send_message(recipient, text if text else "")
 
-        # Статистика
         storage.stats["sent"] = storage.stats.get("sent", 0) + 1
         storage.stats["last_send"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
