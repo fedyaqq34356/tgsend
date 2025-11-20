@@ -8,7 +8,6 @@ from database.storage import storage
 
 router = Router()
 
-# === Добавление аккаунта ===
 @router.message(F.text == "➕ Добавить аккаунт")
 async def add_account_start(message: Message, state: FSMContext):
     await state.set_state(AddAccount.waiting_session_name)
@@ -103,7 +102,7 @@ async def process_password(message: Message, state: FSMContext):
         await cancel_auth(message.from_user.id)
         await message.answer(f"❌ {result}", reply_markup=accounts_menu())
 
-# === Список аккаунтов ===
+
 @router.message(F.text == "📋 Список аккаунтов")
 async def show_accounts(message: Message):
     if not storage.accounts:
@@ -116,7 +115,7 @@ async def show_accounts(message: Message):
         text += f"{i}. {status} <b>{name}</b>\n 📞 {phone}\n\n"
     await message.answer(text, parse_mode="HTML")
 
-# === Удаление аккаунта (безопасно) ===
+
 @router.message(F.text == "🗑 Удалить аккаунт")
 async def delete_account_start(message: Message, state: FSMContext):
     if not storage.accounts:
