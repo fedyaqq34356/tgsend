@@ -19,6 +19,8 @@ class DeleteTarget(StatesGroup):
 
 class SendMessage(StatesGroup):
     choosing_targets = State()
+    choosing_send_mode = State()
+    waiting_interval = State()
     waiting_content_type = State()
     waiting_text = State()
     waiting_media = State()
@@ -42,8 +44,8 @@ class DeleteDraft(StatesGroup):
 
 class ScheduleMessage(StatesGroup):
     choosing_targets = State()
-    choosing_source = State()  # Новое состояние
-    choosing_draft = State()   # Новое состояние
+    choosing_source = State()
+    choosing_draft = State()
     waiting_content_type = State()
     waiting_text = State()
     waiting_media = State()
