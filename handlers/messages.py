@@ -34,6 +34,11 @@ async def send_message_start(message: Message, state: FSMContext):
     text += "\nПример: 1,3,5 или all"
     await message.answer(text, reply_markup=cancel_kb())
 
+@router.message(SendMessage.choosing_targets, F.text == "❌ Отмена")
+async def cancel_targets(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=main_menu())
+
 @router.message(SendMessage.choosing_targets)
 async def process_targets_choice(message: Message, state: FSMContext):
     try:
@@ -59,6 +64,11 @@ async def process_targets_choice(message: Message, state: FSMContext):
     except:
         await message.answer("❌ Ошибка! Попробуйте снова:")
 
+@router.message(SendMessage.waiting_content_type, F.text == "❌ Отмена")
+async def cancel_content_type(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=main_menu())
+
 @router.message(SendMessage.waiting_content_type)
 async def process_content_type(message: Message, state: FSMContext):
     content_type = message.text
@@ -82,12 +92,16 @@ async def process_content_type(message: Message, state: FSMContext):
     else:
         await message.answer("❌ Выберите тип из кнопок!")
 
+@router.message(SendMessage.waiting_text, F.text == "❌ Отмена")
+async def cancel_text(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=main_menu())
+
 @router.message(SendMessage.waiting_text)
 async def process_message_text(message: Message, state: FSMContext):
     data = await state.get_data()
     target_ids = data["target_ids"]
     
-
     if message.html_text:
         text = message.html_text
     else:
@@ -121,6 +135,11 @@ async def process_message_text(message: Message, state: FSMContext):
         reply_markup=main_menu()
     )
 
+@router.message(SendMessage.waiting_media, F.text == "❌ Отмена")
+async def cancel_media(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=main_menu())
+
 @router.message(SendMessage.waiting_media)
 async def process_message_media(message: Message, state: FSMContext):
     data = await state.get_data()
@@ -128,7 +147,6 @@ async def process_message_media(message: Message, state: FSMContext):
     content_type = data["content_type"]
     caption = message.caption or ""
     
-
     file_id = None
     if content_type == "photo" and message.photo:
         file_id = message.photo[-1].file_id
