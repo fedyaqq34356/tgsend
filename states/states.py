@@ -42,6 +42,8 @@ class DeleteDraft(StatesGroup):
 
 class ScheduleMessage(StatesGroup):
     choosing_targets = State()
+    choosing_source = State()  # Новое состояние
+    choosing_draft = State()   # Новое состояние
     waiting_content_type = State()
     waiting_text = State()
     waiting_media = State()
