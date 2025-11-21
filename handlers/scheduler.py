@@ -27,6 +27,11 @@ async def schedule_start(message: Message, state: FSMContext):
     await state.set_state(ScheduleMessage.choosing_targets)
     await message.answer(text, reply_markup=cancel_kb())
 
+@router.message(ScheduleMessage.choosing_targets, F.text == "❌ Отмена")
+async def cancel_targets_choice(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
+
 @router.message(ScheduleMessage.choosing_targets)
 async def process_schedule_targets(message: Message, state: FSMContext):
     try:
@@ -57,6 +62,11 @@ async def process_schedule_targets(message: Message, state: FSMContext):
     except:
         await message.answer("❌ Ошибка! Попробуйте снова:")
 
+@router.message(ScheduleMessage.choosing_source, F.text == "❌ Отмена")
+async def cancel_source_choice(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
+
 @router.message(ScheduleMessage.choosing_source, F.text.in_(["1", "2"]))
 async def process_schedule_source(message: Message, state: FSMContext):
     if message.text == "1":
@@ -76,6 +86,11 @@ async def process_schedule_source(message: Message, state: FSMContext):
         
         await state.set_state(ScheduleMessage.choosing_draft)
         await message.answer(text, reply_markup=cancel_kb())
+
+@router.message(ScheduleMessage.choosing_draft, F.text == "❌ Отмена")
+async def cancel_draft_choice(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
 
 @router.message(ScheduleMessage.choosing_draft, F.text.regexp(r'^\d+$'))
 async def process_draft_selection(message: Message, state: FSMContext):
@@ -109,6 +124,11 @@ async def process_draft_selection(message: Message, state: FSMContext):
     except:
         await message.answer("❌ Ошибка! Попробуйте снова:")
 
+@router.message(ScheduleMessage.waiting_content_type, F.text == "❌ Отмена")
+async def cancel_content_type(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
+
 @router.message(ScheduleMessage.waiting_content_type)
 async def process_schedule_content_type(message: Message, state: FSMContext):
     content_type = message.text
@@ -132,6 +152,11 @@ async def process_schedule_content_type(message: Message, state: FSMContext):
     else:
         await message.answer("❌ Выберите тип из кнопок!")
 
+@router.message(ScheduleMessage.waiting_text, F.text == "❌ Отмена")
+async def cancel_text_input(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
+
 @router.message(ScheduleMessage.waiting_text)
 async def process_schedule_text(message: Message, state: FSMContext):
     if message.html_text:
@@ -154,6 +179,11 @@ async def process_schedule_text(message: Message, state: FSMContext):
         "• +1д - через 1 день",
         reply_markup=cancel_kb()
     )
+
+@router.message(ScheduleMessage.waiting_media, F.text == "❌ Отмена")
+async def cancel_media_input(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
 
 @router.message(ScheduleMessage.waiting_media)
 async def process_schedule_media(message: Message, state: FSMContext):
@@ -188,6 +218,11 @@ async def process_schedule_media(message: Message, state: FSMContext):
         "• +1д - через 1 день",
         reply_markup=cancel_kb()
     )
+
+@router.message(ScheduleMessage.waiting_time, F.text == "❌ Отмена")
+async def cancel_time_input(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
 
 @router.message(ScheduleMessage.waiting_time)
 async def process_schedule_time(message: Message, state: FSMContext):
@@ -331,6 +366,11 @@ async def delete_scheduled_start(message: Message, state: FSMContext):
     await state.set_state(DeleteScheduled.choosing_message)
     await message.answer(text, reply_markup=cancel_kb())
 
+@router.message(DeleteScheduled.choosing_message, F.text == "❌ Отмена")
+async def cancel_deletion(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
+
 @router.message(DeleteScheduled.choosing_message)
 async def process_scheduled_deletion(message: Message, state: FSMContext):
     try:
@@ -376,4 +416,4 @@ async def process_scheduled_deletion(message: Message, state: FSMContext):
             f"• Несколько: 1,3,5\n"
             f"• Все: all",
             reply_markup=cancel_kb()
-            )
+    )
