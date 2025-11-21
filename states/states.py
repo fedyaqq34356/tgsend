@@ -38,6 +38,8 @@ class ConfigureDraft(StatesGroup):
 
 class SendDraft(StatesGroup):
     choosing_draft = State()
+    choosing_send_mode = State()  # Добавлено
+    waiting_interval = State()    # Добавлено
 
 class DeleteDraft(StatesGroup):
     choosing_draft = State()
