@@ -50,7 +50,6 @@ async def process_schedule_targets(message: Message, state: FSMContext):
         await state.update_data(target_ids=selected_targets)
         await state.set_state(ScheduleMessage.choosing_source)
         
-        # Предлагаем выбор: новое сообщение или из черновика
         await message.answer(
             f"✅ Выбрано получателей: {len(selected_targets)}\n\n"
             "Откуда взять сообщение?\n\n"
@@ -70,11 +69,9 @@ async def cancel_source_choice(message: Message, state: FSMContext):
 @router.message(ScheduleMessage.choosing_source, F.text.in_(["1", "2"]))
 async def process_schedule_source(message: Message, state: FSMContext):
     if message.text == "1":
-        # Создать новое сообщение
         await state.set_state(ScheduleMessage.waiting_content_type)
         await message.answer("Что отправить?", reply_markup=content_type_kb())
     else:
-        # Выбрать из черновика
         if not storage.drafts:
             await message.answer("❌ Нет черновиков! Создайте новое сообщение:", reply_markup=content_type_kb())
             await state.set_state(ScheduleMessage.waiting_content_type)
@@ -101,7 +98,6 @@ async def process_draft_selection(message: Message, state: FSMContext):
             await message.answer("❌ Черновик не найден! Попробуйте снова:")
             return
         
-        # Сохраняем данные черновика
         await state.update_data(
             text=draft.get("text", ""),
             content_type=draft.get("content_type", "text"),
@@ -229,10 +225,8 @@ async def process_schedule_time(message: Message, state: FSMContext):
     try:
         time_str = message.text.strip()
         
-        # Быстрые команды
         if time_str.startswith('+'):
             now = datetime.now()
-            # Извлекаем число
             digits = ''.join(filter(str.isdigit, time_str))
             if not digits:
                 raise ValueError("Не указано количество")
@@ -248,7 +242,6 @@ async def process_schedule_time(message: Message, state: FSMContext):
             else:
                 raise ValueError("Неизвестный формат быстрой команды")
         else:
-            # Парсинг даты и времени
             parts = time_str.split(' ')
             if len(parts) != 2:
                 raise ValueError("Неверный формат. Используйте: ДД.ММ.ГГГГ ЧЧ:ММ")
@@ -266,7 +259,6 @@ async def process_schedule_time(message: Message, state: FSMContext):
         content_type = data.get("content_type", "text")
         file_id = data.get("file_id")
         
-        # Создаем отдельное запланированное сообщение для каждого получателя
         for target_id in target_ids:
             if target_id in storage.targets:
                 assigned = storage.targets[target_id].get("assigned_accounts", []).copy()
@@ -386,14 +378,12 @@ async def process_scheduled_deletion(message: Message, state: FSMContext):
                 reply_markup=scheduler_menu()
             )
         else:
-            # Удаление по номерам через запятую
             indices = [int(x.strip()) - 1 for x in text.split(',') if x.strip().isdigit()]
             
             if not indices:
                 await message.answer("❌ Неверный формат! Используйте: 1,3,5 или all")
                 return
             
-            # Сортируем индексы в обратном порядке, чтобы удаление не сбивало индексы
             indices.sort(reverse=True)
             
             removed_count = 0
