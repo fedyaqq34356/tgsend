@@ -1,82 +1,188 @@
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
-from states.states import CreateDraft, ConfigureDraft, SendDraft, DeleteDraft
-from keyboards.main_kb import cancel_kb, drafts_menu, main_menu, content_type_kb
+from states.states import ScheduleMessage, DeleteScheduled
+from keyboards.main_kb import cancel_kb, scheduler_menu, content_type_kb
 from database.storage import storage
-from utils.telethon_auth import send_telegram_message
-import random
-import asyncio
+from datetime import datetime, timedelta
 
 router = Router()
 
 
-@router.message(F.text == "➕ Создать черновик")
-async def create_draft_start(message: Message, state: FSMContext):
-    await state.set_state(CreateDraft.waiting_content_type)
-    await message.answer("Что создать?", reply_markup=content_type_kb())
+@router.message(F.text == "➕ Запланировать")
+async def schedule_start(message: Message, state: FSMContext):
+    if not storage.targets:
+        await message.answer("❌ Сначала добавьте получателей!")
+        return
+    
+    text = "Выберите получателей (номера через запятую или 'all'):\n\n"
+    target_list = list(storage.targets.items())
+    for i, (tid, data) in enumerate(target_list, 1):
+        if data["type"] == "user":
+            text += f"{i}. @{data['username']}\n"
+        else:
+            text += f"{i}. Группа {data['chat_id']}\n"
+    
+    text += "\nПример: 1,3,5 или all"
+    await state.set_state(ScheduleMessage.choosing_targets)
+    await message.answer(text, reply_markup=cancel_kb())
 
-@router.message(CreateDraft.waiting_content_type, F.text == "❌ Отмена")
-async def cancel_draft_type(message: Message, state: FSMContext):
+@router.message(ScheduleMessage.choosing_targets, F.text == "❌ Отмена")
+async def cancel_targets_choice(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
 
-@router.message(CreateDraft.waiting_content_type)
-async def process_draft_content_type(message: Message, state: FSMContext):
+@router.message(ScheduleMessage.choosing_targets)
+async def process_schedule_targets(message: Message, state: FSMContext):
+    try:
+        target_list = list(storage.targets.keys())
+        
+        if message.text.lower() == "all":
+            selected_targets = target_list.copy()
+        else:
+            indices = [int(x.strip()) - 1 for x in message.text.split(',') if x.strip().isdigit()]
+            selected_targets = [target_list[i] for i in indices if 0 <= i < len(target_list)]
+        
+        if not selected_targets:
+            await message.answer("❌ Получатели не выбраны! Попробуйте снова:")
+            return
+        
+        await state.update_data(target_ids=selected_targets)
+        await state.set_state(ScheduleMessage.choosing_source)
+        
+        await message.answer(
+            f"✅ Выбрано получателей: {len(selected_targets)}\n\n"
+            "Откуда взять сообщение?\n\n"
+            "1️⃣ - Создать новое\n"
+            "2️⃣ - Из черновика\n\n"
+            "Отправьте 1 или 2:",
+            reply_markup=cancel_kb()
+        )
+    except:
+        await message.answer("❌ Ошибка! Попробуйте снова:")
+
+@router.message(ScheduleMessage.choosing_source, F.text == "❌ Отмена")
+async def cancel_source_choice(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
+
+@router.message(ScheduleMessage.choosing_source, F.text.in_(["1", "2"]))
+async def process_schedule_source(message: Message, state: FSMContext):
+    if message.text == "1":
+        await state.set_state(ScheduleMessage.waiting_content_type)
+        await message.answer("Что отправить?", reply_markup=content_type_kb())
+    else:
+        if not storage.drafts:
+            await message.answer("❌ Нет черновиков! Создайте новое сообщение:", reply_markup=content_type_kb())
+            await state.set_state(ScheduleMessage.waiting_content_type)
+            return
+        
+        text = "Выберите черновик (номер или название):\n\n"
+        for draft in storage.drafts:
+            text += f"{draft['id']}. {draft['text'][:40] if draft.get('text') else '[Медиа]'}...\n"
+        
+        await state.set_state(ScheduleMessage.choosing_draft)
+        await message.answer(text, reply_markup=cancel_kb())
+
+@router.message(ScheduleMessage.choosing_draft, F.text == "❌ Отмена")
+async def cancel_draft_choice(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
+
+@router.message(ScheduleMessage.choosing_draft, F.text.regexp(r'^\d+$'))
+async def process_draft_selection(message: Message, state: FSMContext):
+    try:
+        draft_id = int(message.text)
+        draft = next((d for d in storage.drafts if d["id"] == draft_id), None)
+        if not draft:
+            await message.answer("❌ Черновик не найден! Попробуйте снова:")
+            return
+        
+        await state.update_data(
+            text=draft.get("text", ""),
+            content_type=draft.get("content_type", "text"),
+            file_id=draft.get("file_id")
+        )
+        
+        await state.set_state(ScheduleMessage.waiting_time)
+        now = datetime.now() + timedelta(hours=2)
+        await message.answer(
+            f"⏰ Ваше текущее время: {now.strftime('%d.%m.%Y %H:%M')}\n\n"
+            "Когда отправить?\n\n"
+            "Формат: ДД.ММ.ГГГГ ЧЧ:ММ\n"
+            "Пример: 20.12.2025 15:30\n\n"
+            "Или быстрые команды:\n"
+            "• +5м - через 5 минут\n"
+            "• +2ч - через 2 часа\n"
+            "• +1д - через 1 день",
+            reply_markup=cancel_kb()
+        )
+    except:
+        await message.answer("❌ Ошибка! Попробуйте снова:")
+
+@router.message(ScheduleMessage.waiting_content_type, F.text == "❌ Отмена")
+async def cancel_content_type(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
+
+@router.message(ScheduleMessage.waiting_content_type)
+async def process_schedule_content_type(message: Message, state: FSMContext):
     content_type = message.text
     
     if content_type == "💬 Текст":
         await state.update_data(content_type="text")
-        await state.set_state(CreateDraft.waiting_text)
-        await message.answer("Введите текст черновика:", reply_markup=cancel_kb())
+        await state.set_state(ScheduleMessage.waiting_text)
+        await message.answer("Введите текст сообщения:", reply_markup=cancel_kb())
     elif content_type == "🖼 Фото":
         await state.update_data(content_type="photo")
-        await state.set_state(CreateDraft.waiting_media)
+        await state.set_state(ScheduleMessage.waiting_media)
         await message.answer("Отправьте фото (можно с подписью):", reply_markup=cancel_kb())
     elif content_type == "🎥 Видео":
         await state.update_data(content_type="video")
-        await state.set_state(CreateDraft.waiting_media)
+        await state.set_state(ScheduleMessage.waiting_media)
         await message.answer("Отправьте видео (можно с подписью):", reply_markup=cancel_kb())
     elif content_type == "📎 Файл":
         await state.update_data(content_type="document")
-        await state.set_state(CreateDraft.waiting_media)
+        await state.set_state(ScheduleMessage.waiting_media)
         await message.answer("Отправьте файл (можно с подписью):", reply_markup=cancel_kb())
     else:
         await message.answer("❌ Выберите тип из кнопок!")
 
-@router.message(CreateDraft.waiting_text, F.text == "❌ Отмена")
-async def cancel_draft_text(message: Message, state: FSMContext):
+@router.message(ScheduleMessage.waiting_text, F.text == "❌ Отмена")
+async def cancel_text_input(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
 
-@router.message(CreateDraft.waiting_text)
-async def process_draft_text(message: Message, state: FSMContext):
-    data = await state.get_data()
-    
+@router.message(ScheduleMessage.waiting_text)
+async def process_schedule_text(message: Message, state: FSMContext):
     if message.html_text:
         text = message.html_text
     else:
         text = message.text
     
-    draft = {
-        "id": len(storage.drafts) + 1,
-        "text": text,
-        "content_type": data.get("content_type", "text"),
-        "target_ids": [],
-        "accounts": []
-    }
-    storage.drafts.append(draft)
-    storage.save_drafts()
-    await state.clear()
-    await message.answer(f"✅ Черновик #{draft['id']} создан!", reply_markup=drafts_menu())
+    await state.update_data(text=text)
+    await state.set_state(ScheduleMessage.waiting_time)
+    
+    now = datetime.now() + timedelta(hours=2)
+    await message.answer(
+        f"⏰ Ваше текущее время: {now.strftime('%d.%m.%Y %H:%M')}\n\n"
+        "Когда отправить?\n\n"
+        "Формат: ДД.ММ.ГГГГ ЧЧ:ММ\n"
+        "Пример: 20.12.2025 15:30\n\n"
+        "Или быстрые команды:\n"
+        "• +5м - через 5 минут\n"
+        "• +2ч - через 2 часа\n"
+        "• +1д - через 1 день",
+        reply_markup=cancel_kb()
+    )
 
-@router.message(CreateDraft.waiting_media, F.text == "❌ Отмена")
-async def cancel_draft_media(message: Message, state: FSMContext):
+@router.message(ScheduleMessage.waiting_media, F.text == "❌ Отмена")
+async def cancel_media_input(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
 
-@router.message(CreateDraft.waiting_media)
-async def process_draft_media(message: Message, state: FSMContext):
+@router.message(ScheduleMessage.waiting_media)
+async def process_schedule_media(message: Message, state: FSMContext):
     data = await state.get_data()
     content_type = data["content_type"]
     caption = message.caption or ""
@@ -93,330 +199,211 @@ async def process_draft_media(message: Message, state: FSMContext):
         await message.answer("❌ Не удалось получить медиа! Попробуйте снова:")
         return
     
-    draft = {
-        "id": len(storage.drafts) + 1,
-        "text": caption,
-        "content_type": content_type,
-        "file_id": file_id,
-        "target_ids": [],
-        "accounts": []
-    }
-    storage.drafts.append(draft)
-    storage.save_drafts()
+    await state.update_data(file_id=file_id, text=caption)
+    await state.set_state(ScheduleMessage.waiting_time)
+    
+    now = datetime.now() + timedelta(hours=2)
+    await message.answer(
+        f"⏰ Ваше текущее время: {now.strftime('%d.%m.%Y %H:%M')}\n\n"
+        "Когда отправить?\n\n"
+        "Формат: ДД.ММ.ГГГГ ЧЧ:ММ\n"
+        "Пример: 20.12.2025 15:30\n\n"
+        "Или быстрые команды:\n"
+        "• +5м - через 5 минут\n"
+        "• +2ч - через 2 часа\n"
+        "• +1д - через 1 день",
+        reply_markup=cancel_kb()
+    )
+
+@router.message(ScheduleMessage.waiting_time, F.text == "❌ Отмена")
+async def cancel_time_input(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer(f"✅ Черновик #{draft['id']} создан!", reply_markup=drafts_menu())
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
+
+@router.message(ScheduleMessage.waiting_time)
+async def process_schedule_time(message: Message, state: FSMContext):
+    try:
+        time_str = message.text.strip()
+        
+        if time_str.startswith('+'):
+            now = datetime.now()
+            digits = ''.join(filter(str.isdigit, time_str))
+            if not digits:
+                raise ValueError("Не указано количество")
+            amount = int(digits)
+            
+            time_str_lower = time_str.lower()
+            if 'м' in time_str_lower or 'm' in time_str_lower:
+                send_time = now + timedelta(minutes=amount)
+            elif 'ч' in time_str_lower or 'h' in time_str_lower:
+                send_time = now + timedelta(hours=amount)
+            elif 'д' in time_str_lower or 'd' in time_str_lower:
+                send_time = now + timedelta(days=amount)
+            else:
+                raise ValueError("Неизвестный формат быстрой команды")
+        else:
+            parts = time_str.split(' ')
+            if len(parts) != 2:
+                raise ValueError("Неверный формат. Используйте: ДД.ММ.ГГГГ ЧЧ:ММ")
+            
+            date_part = parts[0]
+            time_part = parts[1].replace('.', ':')
+            time_str = f"{date_part} {time_part}"
+            
+            user_time = datetime.strptime(time_str, "%d.%m.%Y %H:%M")
+            send_time = user_time - timedelta(hours=2)
+        
+        data = await state.get_data()
+        target_ids = data["target_ids"]
+        text = data.get("text", "")
+        content_type = data.get("content_type", "text")
+        file_id = data.get("file_id")
+        
+        for target_id in target_ids:
+            if target_id in storage.targets:
+                assigned = storage.targets[target_id].get("assigned_accounts", []).copy()
+                
+                msg_data = {
+                    "time": send_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "target_id": target_id,
+                    "text": text,
+                    "accounts": assigned,
+                    "content_type": content_type
+                }
+                
+                if file_id:
+                    msg_data["file_id"] = file_id
+                
+                storage.scheduled_messages.append(msg_data)
+        
+        storage.save_scheduled()
+        
+        user_display_time = send_time + timedelta(hours=2)
+        
+        await state.clear()
+        await message.answer(
+            f"✅ Сообщения запланированы на {user_display_time.strftime('%d.%m.%Y %H:%M')}!\n"
+            f"Получателей: {len(target_ids)}",
+            reply_markup=scheduler_menu()
+        )
+    except ValueError as e:
+        await message.answer(
+            f"❌ Ошибка формата времени!\n\n"
+            f"Используйте:\n"
+            f"• Дата и время: 20.12.2025 15:30\n"
+            f"• Быстрые команды: +5м, +2ч, +1д\n\n"
+            f"Попробуйте снова:",
+            reply_markup=cancel_kb()
+        )
+    except Exception as e:
+        await message.answer(
+            f"❌ Ошибка: {str(e)}\n\n"
+            f"Попробуйте снова или используйте формат:\n"
+            f"20.12.2025 15:30",
+            reply_markup=cancel_kb()
+        )
 
 
-@router.message(F.text == "📋 Список черновиков")
-async def show_drafts(message: Message):
-    if not storage.drafts:
-        await message.answer("❌ Нет черновиков")
+@router.message(F.text == "📋 Показать запланированные")
+async def show_scheduled(message: Message):
+    if not storage.scheduled_messages:
+        await message.answer("❌ Нет запланированных сообщений")
         return
     
-    text = "📝 <b>Черновики:</b>\n\n"
-    for draft in storage.drafts:
-        type_emoji = {"text": "💬", "photo": "🖼", "video": "🎥", "document": "📎"}.get(draft.get("content_type", "text"), "💬")
-        text += f"#{draft['id']} {type_emoji}: {draft['text'][:50] if draft.get('text') else '[Медиа]'}...\n"
-        text += f"Получатели: {len(draft['target_ids'])} | Аккаунты: {len(draft['accounts'])}\n\n"
+    text = "⏰ <b>Запланированные сообщения:</b>\n\n"
+    for i, msg in enumerate(storage.scheduled_messages, 1):
+        server_time = datetime.strptime(msg['time'], "%Y-%m-%d %H:%M:%S")
+        user_time = server_time + timedelta(hours=2)
+        
+        target_data = storage.targets.get(msg["target_id"], {})
+        name = target_data.get('username', target_data.get('chat_id', 'неизвестно'))
+        if target_data.get("type") == "user":
+            name = f"@{name}"
+        
+        content_type = msg.get("content_type", "text")
+        type_emoji = {"text": "💬", "photo": "🖼", "video": "🎥", "document": "📎"}.get(content_type, "💬")
+        
+        text += f"{i}. {type_emoji} {user_time.strftime('%d.%m.%Y %H:%M')} → {name}\n"
+        if msg.get('text'):
+            text += f"   {msg['text'][:40]}...\n\n"
+        else:
+            text += "\n"
     
     await message.answer(text, parse_mode="HTML")
 
 
-@router.message(F.text == "⚙️ Настроить черновик")
-async def configure_draft_start(message: Message, state: FSMContext):
-    if not storage.drafts:
-        await message.answer("❌ Нет черновиков")
+@router.message(F.text == "🗑 Удалить запланированное")
+async def delete_scheduled_start(message: Message, state: FSMContext):
+    if not storage.scheduled_messages:
+        await message.answer("❌ Нет запланированных сообщений")
         return
     
-    text = "Выберите черновик для настройки:\n\n"
-    for draft in storage.drafts:
-        text += f"{draft['id']}. {draft['text'][:40] if draft.get('text') else '[Медиа]'}...\n"
+    text = "Выберите номер для удаления:\n\n"
+    for i, msg in enumerate(storage.scheduled_messages, 1):
+        server_time = datetime.strptime(msg['time'], "%Y-%m-%d %H:%M:%S")
+        user_time = server_time + timedelta(hours=2)
+        
+        target_data = storage.targets.get(msg["target_id"], {})
+        name = target_data.get('username', target_data.get('chat_id', 'неизвестно'))
+        if target_data.get("type") == "user":
+            name = f"@{name}"
+        
+        text += f"{i}. {user_time.strftime('%d.%m %H:%M')} → {name}\n"
     
-    await state.set_state(ConfigureDraft.choosing_draft)
+    text += "\n💡 Можно:\n"
+    text += "• Один номер: 3\n"
+    text += "• Несколько: 1,3,5\n"
+    text += "• Все: all"
+    
+    await state.set_state(DeleteScheduled.choosing_message)
     await message.answer(text, reply_markup=cancel_kb())
 
-@router.message(ConfigureDraft.choosing_draft, F.text == "❌ Отмена")
-async def cancel_configure_draft(message: Message, state: FSMContext):
+@router.message(DeleteScheduled.choosing_message, F.text == "❌ Отмена")
+async def cancel_deletion(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
+    await message.answer("❌ Действие отменено", reply_markup=scheduler_menu())
 
-@router.message(ConfigureDraft.choosing_draft, F.text.regexp(r'^\d+$'))
-async def process_draft_choice(message: Message, state: FSMContext):
+@router.message(DeleteScheduled.choosing_message)
+async def process_scheduled_deletion(message: Message, state: FSMContext):
     try:
-        draft_id = int(message.text)
-        draft = next((d for d in storage.drafts if d["id"] == draft_id), None)
-        if not draft:
-            await message.answer("❌ Черновик не найден!")
-            return
+        text = message.text.strip().lower()
         
-        await state.update_data(draft_id=draft_id)
-        await state.set_state(ConfigureDraft.choosing_action)
-        await message.answer(
-            "Что настроить?\n\n1️⃣ Получатели\n2️⃣ Аккаунты\n\nОтправьте 1 или 2:",
-            reply_markup=cancel_kb()
-        )
-    except:
-        await message.answer("❌ Введите номер черновика!")
-
-@router.message(ConfigureDraft.choosing_action, F.text == "❌ Отмена")
-async def cancel_configure_action(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
-
-@router.message(ConfigureDraft.choosing_action, F.text.in_(["1", "2"]))
-async def process_config_action(message: Message, state: FSMContext):
-    data = await state.get_data()
-    draft_id = data["draft_id"]
-    draft = next((d for d in storage.drafts if d["id"] == draft_id), None)
-
-    if message.text == "1":
-        text = "Выберите получателей (номера через запятую или 'all'):\n\n"
-        for i, tid in enumerate(storage.targets.keys(), 1):
-            target_data = storage.targets[tid]
-            name = target_data.get('username', target_data.get('chat_id'))
-            text += f"{i}. {name}\n"
-        
-        await state.update_data(config_type="targets")
-        await state.set_state(ConfigureDraft.selecting_targets)
-        await message.answer(text, reply_markup=cancel_kb())
-    
-    else:
-        text = "Выберите аккаунты (номера через запятую или 'all'):\n\n"
-        for i, name in enumerate(storage.accounts.keys(), 1):
-            text += f"{i}. {name}\n"
-        
-        await state.update_data(config_type="accounts")
-        await state.set_state(ConfigureDraft.selecting_accounts)
-        await message.answer(text, reply_markup=cancel_kb())
-
-@router.message(ConfigureDraft.selecting_targets, F.text == "❌ Отмена")
-async def cancel_select_targets(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
-
-@router.message(ConfigureDraft.selecting_targets)
-async def process_targets_selection(message: Message, state: FSMContext):
-    data = await state.get_data()
-    draft_id = data["draft_id"]
-    draft = next((d for d in storage.drafts if d["id"] == draft_id), None)
-    
-    target_list = list(storage.targets.keys())
-    
-    if message.text.lower() == "all":
-        draft["target_ids"] = target_list.copy()
-    else:
-        try:
-            indices = [int(x.strip()) - 1 for x in message.text.split(',') if x.strip().isdigit()]
-            draft["target_ids"] = [target_list[i] for i in indices if 0 <= i < len(target_list)]
-        except:
-            await message.answer("❌ Неверный ввод! Попробуйте снова:")
-            return
-    
-    storage.save_drafts()
-    await state.clear()
-    await message.answer(f"✅ Получатели настроены ({len(draft['target_ids'])})", reply_markup=drafts_menu())
-
-@router.message(ConfigureDraft.selecting_accounts, F.text == "❌ Отмена")
-async def cancel_select_accounts(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
-
-@router.message(ConfigureDraft.selecting_accounts)
-async def process_accounts_selection(message: Message, state: FSMContext):
-    data = await state.get_data()
-    draft_id = data["draft_id"]
-    draft = next((d for d in storage.drafts if d["id"] == draft_id), None)
-    
-    acc_list = list(storage.accounts.keys())
-    
-    if message.text.lower() == "all":
-        draft["accounts"] = acc_list.copy()
-    else:
-        try:
-            indices = [int(x.strip()) - 1 for x in message.text.split(',') if x.strip().isdigit()]
-            draft["accounts"] = [acc_list[i] for i in indices if 0 <= i < len(acc_list)]
-        except:
-            await message.answer("❌ Неверный ввод! Попробуйте снова:")
-            return
-    
-    storage.save_drafts()
-    await state.clear()
-    await message.answer(f"✅ Аккаунты настроены ({len(draft['accounts'])})", reply_markup=drafts_menu())
-
-
-@router.message(F.text == "📤 Отправить черновик")
-async def send_draft_start(message: Message, state: FSMContext):
-    if not storage.drafts:
-        await message.answer("❌ Нет черновиков")
-        return
-    
-    text = "Выберите черновик для отправки:\n\n"
-    for draft in storage.drafts:
-        text += f"{draft['id']}. {draft['text'][:40] if draft.get('text') else '[Медиа]'}...\n"
-    
-    await state.set_state(SendDraft.choosing_draft)
-    await message.answer(text, reply_markup=cancel_kb())
-
-@router.message(SendDraft.choosing_draft, F.text == "❌ Отмена")
-async def cancel_send_draft(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
-
-@router.message(SendDraft.choosing_draft, F.text.regexp(r'^\d+$'))
-async def process_draft_send(message: Message, state: FSMContext):
-    try:
-        draft_id = int(message.text)
-        draft = next((d for d in storage.drafts if d["id"] == draft_id), None)
-        if not draft:
-            await message.answer("❌ Черновик не найден!")
-            return
-        
-        if not draft["target_ids"]:
+        if text == "all":
+            count = len(storage.scheduled_messages)
+            storage.scheduled_messages.clear()
+            storage.save_scheduled()
             await state.clear()
-            await message.answer("❌ У черновика не настроены получатели!", reply_markup=drafts_menu())
-            return
-        
-        await state.update_data(draft_id=draft_id)
-        await state.set_state(SendDraft.choosing_send_mode)
-        await message.answer(
-            "Как отправить?\n\n"
-            "1️⃣ - Все одновременно\n"
-            "2️⃣ - По очереди с интервалом\n\n"
-            "Отправьте 1 или 2:",
-            reply_markup=cancel_kb()
-        )
-    except:
-        await message.answer("❌ Ошибка отправки!")
-
-@router.message(SendDraft.choosing_send_mode, F.text == "❌ Отмена")
-async def cancel_draft_send_mode(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
-
-@router.message(SendDraft.choosing_send_mode, F.text.in_(["1", "2"]))
-async def process_draft_send_mode(message: Message, state: FSMContext):
-    data = await state.get_data()
-    draft_id = data["draft_id"]
-    draft = next((d for d in storage.drafts if d["id"] == draft_id), None)
-    
-    if message.text == "1":
-        await message.answer("📤 Отправка черновика...")
-        
-        total_sent = 0
-        for target_id in draft["target_ids"]:
-            if target_id in storage.targets:
-                target_data = storage.targets[target_id]
-                assigned = draft["accounts"] or target_data.get("assigned_accounts", [])
-                if not assigned:
-                    assigned = [random.choice(list(storage.accounts.keys()))] if storage.accounts else []
-                
-                for acc_name in assigned:
-                    if acc_name in storage.accounts:
-                        client = storage.accounts[acc_name]["client"]
-                        success = await send_telegram_message(
-                            client, target_data, draft.get("text", ""), acc_name,
-                            media_type=draft.get("content_type", "text"),
-                            file_id=draft.get("file_id"),
-                            bot=message.bot
-                        )
-                        if success:
-                            total_sent += 1
-                        await asyncio.sleep(2)
-        
-        await state.clear()
-        await message.answer(f"✅ Черновик отправлен! Успешно: {total_sent}", reply_markup=drafts_menu())
-    else:
-        await state.set_state(SendDraft.waiting_interval)
-        await message.answer(
-            "Установите интервал между отправками (в секундах):\n\n"
-            "Примеры:\n"
-            "• 30 - каждые 30 секунд\n"
-            "• 300 - каждые 5 минут\n"
-            "• 600 - каждые 10 минут\n"
-            "• 1800 - каждые 30 минут",
-            reply_markup=cancel_kb()
-        )
-
-@router.message(SendDraft.waiting_interval, F.text == "❌ Отмена")
-async def cancel_draft_interval(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
-
-@router.message(SendDraft.waiting_interval)
-async def process_draft_interval(message: Message, state: FSMContext):
-    try:
-        interval = int(message.text.strip())
-        if interval < 5:
-            await message.answer("❌ Минимальный интервал 5 секунд! Попробуйте снова:")
-            return
-        
-        data = await state.get_data()
-        draft_id = data["draft_id"]
-        draft = next((d for d in storage.drafts if d["id"] == draft_id), None)
-        
-        await state.clear()
-        await message.answer(
-            f"📤 Отправка черновика начата!\n"
-            f"Получателей: {len(draft['target_ids'])}\n"
-            f"Интервал: {interval} сек ({interval//60} мин)\n\n"
-            f"Сообщения отправляются в фоне...",
-            reply_markup=drafts_menu()
-        )
-        asyncio.create_task(send_draft_with_interval(draft, interval, message.bot))
-    except:
-        await message.answer("❌ Введите число в секундах! Попробуйте снова:")
-
-@router.message(F.text == "🗑 Удалить черновик")
-async def delete_draft_start(message: Message, state: FSMContext):
-    if not storage.drafts:
-        await message.answer("❌ Нет черновиков")
-        return
-    
-    text = "Выберите черновик для удаления:\n\n"
-    for draft in storage.drafts:
-        text += f"{draft['id']}. {draft['text'][:40] if draft.get('text') else '[Медиа]'}...\n"
-    
-    await state.set_state(DeleteDraft.choosing_draft)
-    await message.answer(text + "\nОтправьте номер черновика:", reply_markup=cancel_kb())
-
-@router.message(DeleteDraft.choosing_draft, F.text == "❌ Отмена")
-async def cancel_delete_draft(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
-
-@router.message(DeleteDraft.choosing_draft, F.text.regexp(r'^\d+$'))
-async def process_delete_draft(message: Message, state: FSMContext):
-    try:
-        draft_id = int(message.text)
-        draft = next((d for d in storage.drafts if d["id"] == draft_id), None)
-        if draft:
-            storage.drafts.remove(draft)
-            storage.save_drafts()
-            await state.clear()
-            await message.answer(f"✅ Черновик #{draft_id} удалён!", reply_markup=drafts_menu())
+            await message.answer(
+                f"✅ Удалено {count} запланированных сообщений!",
+                reply_markup=scheduler_menu()
+            )
         else:
-            await message.answer("❌ Черновик не найден")
-    except:
-        await message.answer("❌ Ошибка ввода!")
-
-async def send_draft_with_interval(draft, interval, bot):
-    """Отправляет черновик по очереди с интервалом"""
-    for idx, target_id in enumerate(draft["target_ids"]):
-        if target_id in storage.targets:
-            target_data = storage.targets[target_id]
-            assigned = draft["accounts"] or target_data.get("assigned_accounts", [])
-            if not assigned:
-                assigned = [random.choice(list(storage.accounts.keys()))] if storage.accounts else []
+            indices = [int(x.strip()) - 1 for x in text.split(',') if x.strip().isdigit()]
             
-            for acc_name in assigned:
-                if acc_name in storage.accounts:
-                    client = storage.accounts[acc_name]["client"]
-                    await send_telegram_message(
-                        client, target_data, draft.get("text", ""), acc_name,
-                        media_type=draft.get("content_type", "text"),
-                        file_id=draft.get("file_id"),
-                        bot=bot
-                    )
-        
-        if idx < len(draft["target_ids"]) - 1:
-            await asyncio.sleep(interval)
+            if not indices:
+                await message.answer("❌ Неверный формат! Используйте: 1,3,5 или all")
+                return
+            
+            indices.sort(reverse=True)
+            
+            removed_count = 0
+            for idx in indices:
+                if 0 <= idx < len(storage.scheduled_messages):
+                    storage.scheduled_messages.pop(idx)
+                    removed_count += 1
+            
+            storage.save_scheduled()
+            await state.clear()
+            await message.answer(
+                f"✅ Удалено {removed_count} запланированных сообщений!",
+                reply_markup=scheduler_menu()
+            )
+    except Exception as e:
+        await message.answer(
+            f"❌ Ошибка ввода!\n\n"
+            f"Используйте:\n"
+            f"• Один номер: 3\n"
+            f"• Несколько: 1,3,5\n"
+            f"• Все: all",
+            reply_markup=cancel_kb()
+    )
