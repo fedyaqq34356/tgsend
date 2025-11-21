@@ -1,4 +1,4 @@
-# main.py (bo
+# main.py (bot
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
