@@ -55,14 +55,60 @@ async def process_targets_choice(message: Message, state: FSMContext):
             return
         
         await state.update_data(target_ids=selected_targets)
-        await state.set_state(SendMessage.waiting_content_type)
+        await state.set_state(SendMessage.choosing_send_mode)
         await message.answer(
             f"✅ Выбрано получателей: {len(selected_targets)}\n\n"
-            "Что отправить?",
-            reply_markup=content_type_kb()
+            "Как отправить?\n\n"
+            "1️⃣ - Все одновременно\n"
+            "2️⃣ - По очереди с интервалом\n\n"
+            "Отправьте 1 или 2:",
+            reply_markup=cancel_kb()
         )
     except:
         await message.answer("❌ Ошибка! Попробуйте снова:")
+
+@router.message(SendMessage.choosing_send_mode, F.text == "❌ Отмена")
+async def cancel_send_mode(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=main_menu())
+
+@router.message(SendMessage.choosing_send_mode, F.text.in_(["1", "2"]))
+async def process_send_mode(message: Message, state: FSMContext):
+    if message.text == "1":
+        await state.update_data(send_mode="instant")
+        await state.set_state(SendMessage.waiting_content_type)
+        await message.answer("Что отправить?", reply_markup=content_type_kb())
+    else:
+        await state.update_data(send_mode="delayed")
+        await state.set_state(SendMessage.waiting_interval)
+        await message.answer(
+            "Установите интервал между отправками:\n\n"
+            "Отправьте число (в секундах):\n"
+            "Примеры:\n"
+            "• 30 - каждые 30 секунд\n"
+            "• 300 - каждые 5 минут\n"
+            "• 600 - каждые 10 минут\n"
+            "• 1800 - каждые 30 минут",
+            reply_markup=cancel_kb()
+        )
+
+@router.message(SendMessage.waiting_interval, F.text == "❌ Отмена")
+async def cancel_interval(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=main_menu())
+
+@router.message(SendMessage.waiting_interval)
+async def process_interval(message: Message, state: FSMContext):
+    try:
+        interval = int(message.text.strip())
+        if interval < 5:
+            await message.answer("❌ Минимальный интервал 5 секунд! Попробуйте снова:")
+            return
+        await state.update_data(interval=interval)
+        await state.set_state(SendMessage.waiting_content_type)
+        await message.answer("Что отправить?", reply_markup=content_type_kb())
+    except:
+        await message.answer("❌ Введите число в секундах! Попробуйте снова:")
 
 @router.message(SendMessage.waiting_content_type, F.text == "❌ Отмена")
 async def cancel_content_type(message: Message, state: FSMContext):
@@ -101,39 +147,51 @@ async def cancel_text(message: Message, state: FSMContext):
 async def process_message_text(message: Message, state: FSMContext):
     data = await state.get_data()
     target_ids = data["target_ids"]
+    send_mode = data.get("send_mode", "instant")
     
     if message.html_text:
         text = message.html_text
     else:
         text = message.text
     
-    await message.answer(f"📤 Отправка {len(target_ids)} получателям...")
-    
-    success_count = 0
-    for target_id in target_ids:
-        if target_id in storage.targets:
-            target_data = storage.targets[target_id]
-            assigned = target_data.get("assigned_accounts", []).copy()
-            
-            if not assigned:
-                assigned = [random.choice(list(storage.accounts.keys()))] if storage.accounts else []
-            
-            for acc_name in assigned:
-                if acc_name in storage.accounts:
-                    client = storage.accounts[acc_name]["client"]
-                    success = await send_telegram_message(
-                        client, target_data, text, acc_name, 
-                        media_type="text", bot=message.bot
-                    )
-                    if success:
-                        success_count += 1
-                    await asyncio.sleep(2)
-    
     await state.clear()
-    await message.answer(
-        f"✅ Готово! Отправлено: {success_count}",
-        reply_markup=main_menu()
-    )
+    
+    if send_mode == "instant":
+        await message.answer(f"📤 Отправка {len(target_ids)} получателям...")
+        success_count = 0
+        for target_id in target_ids:
+            if target_id in storage.targets:
+                target_data = storage.targets[target_id]
+                assigned = target_data.get("assigned_accounts", []).copy()
+                
+                if not assigned:
+                    assigned = [random.choice(list(storage.accounts.keys()))] if storage.accounts else []
+                
+                for acc_name in assigned:
+                    if acc_name in storage.accounts:
+                        client = storage.accounts[acc_name]["client"]
+                        success = await send_telegram_message(
+                            client, target_data, text, acc_name, 
+                            media_type="text", bot=message.bot
+                        )
+                        if success:
+                            success_count += 1
+                        await asyncio.sleep(2)
+        
+        await message.answer(
+            f"✅ Готово! Отправлено: {success_count}",
+            reply_markup=main_menu()
+        )
+    else:
+        interval = data.get("interval", 300)
+        await message.answer(
+            f"📤 Отправка начата!\n"
+            f"Получателей: {len(target_ids)}\n"
+            f"Интервал: {interval} сек ({interval//60} мин)\n\n"
+            f"Сообщения отправляются в фоне...",
+            reply_markup=main_menu()
+        )
+        asyncio.create_task(send_with_interval(target_ids, text, interval, "text", None, message.bot))
 
 @router.message(SendMessage.waiting_media, F.text == "❌ Отмена")
 async def cancel_media(message: Message, state: FSMContext):
@@ -144,6 +202,7 @@ async def cancel_media(message: Message, state: FSMContext):
 async def process_message_media(message: Message, state: FSMContext):
     data = await state.get_data()
     target_ids = data["target_ids"]
+    send_mode = data.get("send_mode", "instant")
     content_type = data["content_type"]
     caption = message.caption or ""
     
@@ -159,11 +218,48 @@ async def process_message_media(message: Message, state: FSMContext):
         await message.answer("❌ Не удалось получить медиа! Попробуйте снова:")
         return
     
-    await state.update_data(file_id=file_id, caption=caption)
-    await message.answer(f"📤 Отправка {len(target_ids)} получателям...")
+    await state.clear()
     
-    success_count = 0
-    for target_id in target_ids:
+    if send_mode == "instant":
+        await message.answer(f"📤 Отправка {len(target_ids)} получателям...")
+        success_count = 0
+        for target_id in target_ids:
+            if target_id in storage.targets:
+                target_data = storage.targets[target_id]
+                assigned = target_data.get("assigned_accounts", []).copy()
+                
+                if not assigned:
+                    assigned = [random.choice(list(storage.accounts.keys()))] if storage.accounts else []
+                
+                for acc_name in assigned:
+                    if acc_name in storage.accounts:
+                        client = storage.accounts[acc_name]["client"]
+                        success = await send_telegram_message(
+                            client, target_data, caption, acc_name,
+                            media_type=content_type, file_id=file_id, bot=message.bot
+                        )
+                        if success:
+                            success_count += 1
+                        await asyncio.sleep(2)
+        
+        await message.answer(
+            f"✅ Готово! Отправлено: {success_count}",
+            reply_markup=main_menu()
+        )
+    else:
+        interval = data.get("interval", 300)
+        await message.answer(
+            f"📤 Отправка начата!\n"
+            f"Получателей: {len(target_ids)}\n"
+            f"Интервал: {interval} сек ({interval//60} мин)\n\n"
+            f"Сообщения отправляются в фоне...",
+            reply_markup=main_menu()
+        )
+        asyncio.create_task(send_with_interval(target_ids, caption, interval, content_type, file_id, message.bot))
+
+async def send_with_interval(target_ids, text, interval, media_type, file_id, bot):
+    """Отправляет сообщения по очереди с интервалом"""
+    for idx, target_id in enumerate(target_ids):
         if target_id in storage.targets:
             target_data = storage.targets[target_id]
             assigned = target_data.get("assigned_accounts", []).copy()
@@ -174,16 +270,10 @@ async def process_message_media(message: Message, state: FSMContext):
             for acc_name in assigned:
                 if acc_name in storage.accounts:
                     client = storage.accounts[acc_name]["client"]
-                    success = await send_telegram_message(
-                        client, target_data, caption, acc_name,
-                        media_type=content_type, file_id=file_id, bot=message.bot
+                    await send_telegram_message(
+                        client, target_data, text, acc_name,
+                        media_type=media_type, file_id=file_id, bot=bot
                     )
-                    if success:
-                        success_count += 1
-                    await asyncio.sleep(2)
-    
-    await state.clear()
-    await message.answer(
-        f"✅ Готово! Отправлено: {success_count}",
-        reply_markup=main_menu()
-    )
+            
+            if idx < len(target_ids) - 1:
+                await asyncio.sleep(interval)
