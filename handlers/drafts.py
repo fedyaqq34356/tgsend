@@ -276,6 +276,30 @@ async def process_draft_send(message: Message, state: FSMContext):
             await message.answer("❌ У черновика не настроены получатели!", reply_markup=drafts_menu())
             return
         
+        await state.update_data(draft_id=draft_id)
+        await state.set_state(SendDraft.choosing_send_mode)
+        await message.answer(
+            "Как отправить?\n\n"
+            "1️⃣ - Все одновременно\n"
+            "2️⃣ - По очереди с интервалом\n\n"
+            "Отправьте 1 или 2:",
+            reply_markup=cancel_kb()
+        )
+    except:
+        await message.answer("❌ Ошибка отправки!")
+
+@router.message(SendDraft.choosing_send_mode, F.text == "❌ Отмена")
+async def cancel_draft_send_mode(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
+
+@router.message(SendDraft.choosing_send_mode, F.text.in_(["1", "2"]))
+async def process_draft_send_mode(message: Message, state: FSMContext):
+    data = await state.get_data()
+    draft_id = data["draft_id"]
+    draft = next((d for d in storage.drafts if d["id"] == draft_id), None)
+    
+    if message.text == "1":
         await message.answer("📤 Отправка черновика...")
         
         total_sent = 0
@@ -301,8 +325,46 @@ async def process_draft_send(message: Message, state: FSMContext):
         
         await state.clear()
         await message.answer(f"✅ Черновик отправлен! Успешно: {total_sent}", reply_markup=drafts_menu())
+    else:
+        await state.set_state(SendDraft.waiting_interval)
+        await message.answer(
+            "Установите интервал между отправками (в секундах):\n\n"
+            "Примеры:\n"
+            "• 30 - каждые 30 секунд\n"
+            "• 300 - каждые 5 минут\n"
+            "• 600 - каждые 10 минут\n"
+            "• 1800 - каждые 30 минут",
+            reply_markup=cancel_kb()
+        )
+
+@router.message(SendDraft.waiting_interval, F.text == "❌ Отмена")
+async def cancel_draft_interval(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
+
+@router.message(SendDraft.waiting_interval)
+async def process_draft_interval(message: Message, state: FSMContext):
+    try:
+        interval = int(message.text.strip())
+        if interval < 5:
+            await message.answer("❌ Минимальный интервал 5 секунд! Попробуйте снова:")
+            return
+        
+        data = await state.get_data()
+        draft_id = data["draft_id"]
+        draft = next((d for d in storage.drafts if d["id"] == draft_id), None)
+        
+        await state.clear()
+        await message.answer(
+            f"📤 Отправка черновика начата!\n"
+            f"Получателей: {len(draft['target_ids'])}\n"
+            f"Интервал: {interval} сек ({interval//60} мин)\n\n"
+            f"Сообщения отправляются в фоне...",
+            reply_markup=drafts_menu()
+        )
+        asyncio.create_task(send_draft_with_interval(draft, interval, message.bot))
     except:
-        await message.answer("❌ Ошибка отправки!")
+        await message.answer("❌ Введите число в секундах! Попробуйте снова:")
 
 @router.message(F.text == "🗑 Удалить черновик")
 async def delete_draft_start(message: Message, state: FSMContext):
@@ -336,3 +398,25 @@ async def process_delete_draft(message: Message, state: FSMContext):
             await message.answer("❌ Черновик не найден")
     except:
         await message.answer("❌ Ошибка ввода!")
+
+async def send_draft_with_interval(draft, interval, bot):
+    """Отправляет черновик по очереди с интервалом"""
+    for idx, target_id in enumerate(draft["target_ids"]):
+        if target_id in storage.targets:
+            target_data = storage.targets[target_id]
+            assigned = draft["accounts"] or target_data.get("assigned_accounts", [])
+            if not assigned:
+                assigned = [random.choice(list(storage.accounts.keys()))] if storage.accounts else []
+            
+            for acc_name in assigned:
+                if acc_name in storage.accounts:
+                    client = storage.accounts[acc_name]["client"]
+                    await send_telegram_message(
+                        client, target_data, draft.get("text", ""), acc_name,
+                        media_type=draft.get("content_type", "text"),
+                        file_id=draft.get("file_id"),
+                        bot=bot
+                    )
+        
+        if idx < len(draft["target_ids"]) - 1:
+            await asyncio.sleep(interval)
