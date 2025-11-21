@@ -75,6 +75,15 @@ def content_type_kb():
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
+def draft_selector_kb():
+    """Клавиатура выбора источника сообщения"""
+    kb = [
+        [KeyboardButton(text="1️⃣ Создать новое")],
+        [KeyboardButton(text="2️⃣ Из черновика")],
+        [KeyboardButton(text="❌ Отмена")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
 def cancel_kb():
     kb = [[KeyboardButton(text="❌ Отмена")]]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
