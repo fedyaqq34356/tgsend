@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from states.states import ScheduleMessage, DeleteScheduled
-from keyboards.main_kb import cancel_kb, scheduler_menu, content_type_kb, draft_selector_kb
+from keyboards.main_kb import cancel_kb, scheduler_menu, content_type_kb
 from database.storage import storage
 from datetime import datetime, timedelta
 
