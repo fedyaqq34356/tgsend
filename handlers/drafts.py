@@ -16,6 +16,11 @@ async def create_draft_start(message: Message, state: FSMContext):
     await state.set_state(CreateDraft.waiting_content_type)
     await message.answer("Что создать?", reply_markup=content_type_kb())
 
+@router.message(CreateDraft.waiting_content_type, F.text == "❌ Отмена")
+async def cancel_draft_type(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
+
 @router.message(CreateDraft.waiting_content_type)
 async def process_draft_content_type(message: Message, state: FSMContext):
     content_type = message.text
@@ -39,11 +44,15 @@ async def process_draft_content_type(message: Message, state: FSMContext):
     else:
         await message.answer("❌ Выберите тип из кнопок!")
 
+@router.message(CreateDraft.waiting_text, F.text == "❌ Отмена")
+async def cancel_draft_text(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
+
 @router.message(CreateDraft.waiting_text)
 async def process_draft_text(message: Message, state: FSMContext):
     data = await state.get_data()
     
-
     if message.html_text:
         text = message.html_text
     else:
@@ -60,6 +69,11 @@ async def process_draft_text(message: Message, state: FSMContext):
     storage.save_drafts()
     await state.clear()
     await message.answer(f"✅ Черновик #{draft['id']} создан!", reply_markup=drafts_menu())
+
+@router.message(CreateDraft.waiting_media, F.text == "❌ Отмена")
+async def cancel_draft_media(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
 
 @router.message(CreateDraft.waiting_media)
 async def process_draft_media(message: Message, state: FSMContext):
@@ -121,6 +135,11 @@ async def configure_draft_start(message: Message, state: FSMContext):
     await state.set_state(ConfigureDraft.choosing_draft)
     await message.answer(text, reply_markup=cancel_kb())
 
+@router.message(ConfigureDraft.choosing_draft, F.text == "❌ Отмена")
+async def cancel_configure_draft(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
+
 @router.message(ConfigureDraft.choosing_draft, F.text.regexp(r'^\d+$'))
 async def process_draft_choice(message: Message, state: FSMContext):
     try:
@@ -139,6 +158,11 @@ async def process_draft_choice(message: Message, state: FSMContext):
     except:
         await message.answer("❌ Введите номер черновика!")
 
+@router.message(ConfigureDraft.choosing_action, F.text == "❌ Отмена")
+async def cancel_configure_action(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
+
 @router.message(ConfigureDraft.choosing_action, F.text.in_(["1", "2"]))
 async def process_config_action(message: Message, state: FSMContext):
     data = await state.get_data()
@@ -154,7 +178,7 @@ async def process_config_action(message: Message, state: FSMContext):
         
         await state.update_data(config_type="targets")
         await state.set_state(ConfigureDraft.selecting_targets)
-        await message.answer(text)
+        await message.answer(text, reply_markup=cancel_kb())
     
     else:
         text = "Выберите аккаунты (номера через запятую или 'all'):\n\n"
@@ -163,7 +187,12 @@ async def process_config_action(message: Message, state: FSMContext):
         
         await state.update_data(config_type="accounts")
         await state.set_state(ConfigureDraft.selecting_accounts)
-        await message.answer(text)
+        await message.answer(text, reply_markup=cancel_kb())
+
+@router.message(ConfigureDraft.selecting_targets, F.text == "❌ Отмена")
+async def cancel_select_targets(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
 
 @router.message(ConfigureDraft.selecting_targets)
 async def process_targets_selection(message: Message, state: FSMContext):
@@ -186,6 +215,11 @@ async def process_targets_selection(message: Message, state: FSMContext):
     storage.save_drafts()
     await state.clear()
     await message.answer(f"✅ Получатели настроены ({len(draft['target_ids'])})", reply_markup=drafts_menu())
+
+@router.message(ConfigureDraft.selecting_accounts, F.text == "❌ Отмена")
+async def cancel_select_accounts(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
 
 @router.message(ConfigureDraft.selecting_accounts)
 async def process_accounts_selection(message: Message, state: FSMContext):
@@ -222,6 +256,11 @@ async def send_draft_start(message: Message, state: FSMContext):
     
     await state.set_state(SendDraft.choosing_draft)
     await message.answer(text, reply_markup=cancel_kb())
+
+@router.message(SendDraft.choosing_draft, F.text == "❌ Отмена")
+async def cancel_send_draft(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
 
 @router.message(SendDraft.choosing_draft, F.text.regexp(r'^\d+$'))
 async def process_draft_send(message: Message, state: FSMContext):
@@ -277,6 +316,11 @@ async def delete_draft_start(message: Message, state: FSMContext):
     
     await state.set_state(DeleteDraft.choosing_draft)
     await message.answer(text + "\nОтправьте номер черновика:", reply_markup=cancel_kb())
+
+@router.message(DeleteDraft.choosing_draft, F.text == "❌ Отмена")
+async def cancel_delete_draft(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено", reply_markup=drafts_menu())
 
 @router.message(DeleteDraft.choosing_draft, F.text.regexp(r'^\d+$'))
 async def process_delete_draft(message: Message, state: FSMContext):
