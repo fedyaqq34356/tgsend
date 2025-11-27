@@ -2,8 +2,15 @@
 from aiogram import Router, F
 from aiogram.types import Message
 from database.storage import storage
+import html
 
 router = Router()
+
+def escape_html(text):
+    """Экранирует HTML-символы для безопасного отображения"""
+    if not text:
+        return ""
+    return html.escape(str(text))
 
 @router.message(F.text == "📊 Общая статистика")
 async def show_general_stats(message: Message):
@@ -11,7 +18,6 @@ async def show_general_stats(message: Message):
     text += f"Всего отправлено: {storage.stats.get('sent', 0)}\n"
     text += f"Последняя отправка: {storage.stats.get('last_send', 'никогда')}\n\n"
     
-
     latest_time = None
     latest_acc = None
     latest_msg = None
@@ -28,9 +34,9 @@ async def show_general_stats(message: Message):
     if latest_msg:
         text += "📨 <b>Последнее сообщение:</b>\n"
         text += f"⏰ Время: {latest_msg['time']}\n"
-        text += f"👤 Аккаунт: {latest_acc}\n"
-        text += f"📍 Кому: {latest_msg['target']}\n"
-        text += f"💬 Текст: {latest_msg['text']}\n"
+        text += f"👤 Аккаунт: {escape_html(latest_acc)}\n"
+        text += f"📍 Кому: {escape_html(latest_msg['target'])}\n"
+        text += f"💬 Текст: {escape_html(latest_msg['text'])}\n"
     
     await message.answer(text, parse_mode="HTML")
 
@@ -42,16 +48,15 @@ async def show_account_stats(message: Message):
     
     text = "📱 <b>Статистика по аккаунтам:</b>\n\n"
     for name, data in storage.account_stats.items():
-        text += f"<b>{name}</b>: {data['sent']} сообщений\n"
+        text += f"<b>{escape_html(name)}</b>: {data['sent']} сообщений\n"
         
         if data.get('history'):
-
             history = data['history'][-10:]
             text += f"\n📋 <b>Последние {len(history)} действий:</b>\n"
             for i, msg in enumerate(reversed(history), 1):
                 text += f"{i}. ⏰ {msg['time']}\n"
-                text += f"   📍 {msg['target']}\n"
-                text += f"   💬 {msg['text']}\n\n"
+                text += f"   📍 {escape_html(msg['target'])}\n"
+                text += f"   💬 {escape_html(msg['text'])}\n\n"
         text += "─" * 30 + "\n\n"
     
     await message.answer(text, parse_mode="HTML")
